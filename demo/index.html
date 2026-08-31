@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Paltas</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#08131F" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Paltas" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<style>
+  :root{
+    /* PALTAS palette (from brand card) */
+    --bg:#08131F;            /* deep navy base */
+    --surface:#0E1E30;       /* card navy */
+    --surface2:#152A40;      /* lighter navy */
+    --line:#20374F;          /* hairline */
+    --text:#F4F7F9;          /* off-white */
+    --dim:#8CA3B8;           /* muted blue-grey */
+    --accent:#17B0C4;        /* teal/cyan accent */
+    --accentDark:#0E8FA3;    /* deep teal */
+    --blue:#1E6FB0;          /* logo blue */
+    --ink:#03080D;           /* on-accent text */
+    --star:#FFC24B; --r:18px; --shadow:0 12px 40px rgba(0,0,0,.55);
+    --ease:cubic-bezier(.32,.72,0,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{background:#000;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100%;overflow:hidden;}
+  .phone{width:100%;max-width:430px;height:100vh;max-height:932px;position:relative;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;}
+  @media(min-width:480px){body{padding:18px;}.phone{border-radius:44px;border:10px solid #04080d;box-shadow:0 30px 80px rgba(0,0,0,.7);height:900px;}}
+  .safe{height:env(safe-area-inset-top,0);}
+  .viewport{flex:1;position:relative;overflow:hidden;}
+  .view{position:absolute;inset:0;display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);}
+  .view>*{flex-shrink:0;}
+  .view::-webkit-scrollbar{display:none;}
+  .slide-in{animation:slideIn .34s var(--ease);}
+  @keyframes slideIn{from{transform:translateX(28px);opacity:0;}to{transform:none;opacity:1;}}
+  .rise{animation:rise .4s var(--ease);}
+  @keyframes rise{from{transform:translateY(24px);opacity:0;}to{transform:none;opacity:1;}}
+  img{display:block;}
+  .pad{padding:20px;}
+  h1{font-size:30px;font-weight:800;letter-spacing:-.5px;line-height:1.1;}
+  h2{font-size:20px;font-weight:800;letter-spacing:-.3px;}
+  .dim{color:var(--dim);}
+  .btn{background:linear-gradient(135deg,var(--accent),var(--blue));color:#fff;border:none;width:100%;padding:17px;border-radius:16px;font-size:16px;font-weight:800;cursor:pointer;transition:transform .1s;}
+  .btn:active{transform:scale(.98);}
+  .input{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--text);padding:16px;border-radius:14px;font-size:16px;margin-bottom:12px;}
+  .input:focus{outline:none;border-color:var(--accent);}
+  .appbar{display:flex;align-items:center;gap:14px;padding:16px 18px 10px;position:sticky;top:0;background:linear-gradient(var(--bg),var(--bg) 70%,transparent);z-index:20;}
+  .iconbtn{width:40px;height:40px;border-radius:20px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text);cursor:pointer;flex-shrink:0;}
+  .appbar h2{flex:1;}
+  .loc{display:flex;align-items:center;gap:8px;padding:14px 20px 6px;}
+  .loc .pin{color:var(--accent);font-size:18px;}
+  .loc .where{font-weight:800;font-size:16px;}
+  .loc .chev{color:var(--dim);}
+  .loc .prof{margin-left:auto;width:38px;height:38px;border-radius:19px;overflow:hidden;border:1px solid var(--line);}
+  .loc .prof img{width:100%;height:100%;object-fit:cover;}
+  .search{margin:6px 20px 4px;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:10px;color:var(--dim);font-size:15px;cursor:pointer;}
+  .rail{display:flex;gap:10px;overflow-x:auto;padding:14px 20px 6px;}
+  .rail::-webkit-scrollbar{display:none;}
+  .cat{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;}
+  .cat .bubble{width:62px;height:62px;border-radius:20px;overflow:hidden;border:1px solid var(--line);position:relative;transition:.15s;}
+  .cat .bubble img{width:100%;height:100%;object-fit:cover;opacity:.92;}
+  .cat.on .bubble{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 6px 16px rgba(23,176,196,.3);}
+  .cat.on .bubble::after{content:"";position:absolute;inset:0;border:2px solid var(--accent);border-radius:20px;}
+  .cat .cl{font-size:12px;color:var(--dim);font-weight:600;}
+  .cat.on .cl{color:var(--text);}
+  .hero{margin:12px 20px;border-radius:var(--r);overflow:hidden;position:relative;height:158px;border:1px solid var(--line);}
+  .hero img{width:100%;height:100%;object-fit:cover;}
+  .hero .ov{position:absolute;inset:0;background:linear-gradient(90deg,rgba(8,19,31,.95),rgba(8,19,31,.35) 72%,transparent);}
+  .hero .copy{position:absolute;left:20px;top:26px;max-width:66%;}
+  .hero .copy .k{color:var(--accent);font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+  .hero .copy h3{font-size:23px;font-weight:800;margin-top:6px;line-height:1.15;}
+  .hero .copy p{color:#c3d3e0;font-size:13px;margin-top:6px;}
+  .sec{display:flex;align-items:baseline;justify-content:space-between;padding:18px 20px 8px;}
+  .sec h2{font-size:19px;}
+  .sec a{color:var(--accent);font-size:14px;font-weight:700;}
+  .rcard{margin:0 20px 18px;cursor:pointer;}
+  .rcard .img{height:158px;border-radius:var(--r);position:relative;overflow:hidden;}
+  .rcard .img>img{width:100%;height:100%;object-fit:cover;}
+  .rcard .img .grad{position:absolute;inset:0;background:linear-gradient(transparent 45%,rgba(3,8,13,.6));}
+  .rcard .badge{position:absolute;top:12px;left:12px;background:rgba(8,19,31,.85);backdrop-filter:blur(8px);color:var(--accent);font-size:12px;font-weight:800;padding:6px 10px;border-radius:10px;z-index:2;}
+  .rcard .fee{position:absolute;bottom:12px;left:12px;background:rgba(8,19,31,.85);backdrop-filter:blur(8px);color:#fff;font-size:12px;font-weight:700;padding:6px 10px;border-radius:10px;z-index:2;}
+  .rcard .heart{position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:17px;background:rgba(8,19,31,.7);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:16px;z-index:2;}
+  .rcard .meta{padding:12px 2px 0;}
+  .rcard .row1{display:flex;justify-content:space-between;align-items:center;}
+  .rcard .rname{font-size:18px;font-weight:800;}
+  .rcard .rate{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:3px 8px;font-size:13px;font-weight:700;}
+  .rcard .rate .s{color:var(--star);}
+  .rcard .sub{color:var(--dim);font-size:14px;margin-top:4px;}
+  .tabbar{position:absolute;left:0;right:0;bottom:0;height:78px;background:rgba(8,19,31,.95);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0);z-index:30;}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--dim);font-size:11px;font-weight:600;cursor:pointer;}
+  .tab .ic{font-size:22px;}
+  .tab.on{color:var(--accent);}
+  .haspad{padding-bottom:96px;}
+  .mhead{height:230px;position:relative;display:flex;align-items:flex-end;padding:20px;}
+  .mhead>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .mhead .grad{position:absolute;inset:0;background:linear-gradient(transparent 30%,rgba(8,19,31,.96));}
+  .mhead .info{position:relative;z-index:2;}
+  .mhead .info h1{font-size:27px;}
+  .mhead .info .sub{color:#d3e0ea;font-size:14px;margin-top:5px;}
+  .mback{position:absolute;top:16px;left:16px;z-index:5;width:40px;height:40px;border-radius:20px;background:rgba(8,19,31,.65);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;}
+  .aiband{margin:16px 20px;background:linear-gradient(135deg,#123246,#0E1E30);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;align-items:center;gap:12px;cursor:pointer;}
+  .aiband .glow{width:38px;height:38px;border-radius:19px;background:linear-gradient(135deg,var(--accent),var(--blue));color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;}
+  .aiband .t{font-weight:700;}
+  .aiband .d{color:var(--dim);font-size:13px;}
+  .cathead{color:var(--dim);font-size:13px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;padding:16px 20px 8px;}
+  .mrow{display:flex;gap:14px;padding:14px 20px;cursor:pointer;align-items:center;}
+  .mrow:active{background:var(--surface);}
+  .mrow .txt{flex:1;}
+  .mrow .mn{font-size:16px;font-weight:600;}
+  .mrow .md{color:var(--dim);font-size:13px;margin-top:2px;line-height:1.35;}
+  .mrow .mp{font-weight:700;margin-top:6px;}
+  .mrow .thumb{width:88px;height:88px;border-radius:14px;overflow:hidden;position:relative;flex-shrink:0;border:1px solid var(--line);}
+  .mrow .thumb img{width:100%;height:100%;object-fit:cover;}
+  .mrow .addb{position:absolute;bottom:6px;right:6px;width:30px;height:30px;border-radius:15px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.5);}
+  .cartpill{position:absolute;left:20px;right:20px;bottom:20px;background:linear-gradient(135deg,var(--accent),var(--blue));color:#fff;border-radius:16px;padding:16px 18px;display:flex;align-items:center;gap:12px;font-weight:800;cursor:pointer;box-shadow:0 12px 30px rgba(23,176,196,.35);z-index:25;}
+  .cartpill .c{background:#fff;color:var(--blue);min-width:26px;height:26px;padding:0 7px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:14px;}
+  .srow{display:flex;justify-content:space-between;padding:7px 0;font-size:15px;}
+  .srow .dim{color:var(--dim);}
+  .divider{height:1px;background:var(--line);margin:10px 0;}
+  .total{color:var(--accent);font-size:20px;font-weight:800;}
+  .paycard{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:8px;}
+  .visa{width:40px;height:26px;border-radius:5px;background:linear-gradient(135deg,#1a1f71,#2b3fa0);display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;font-style:italic;}
+  .chat{flex:1;display:flex;flex-direction:column;padding:16px 16px 0;gap:10px;overflow-y:auto;}
+  .bub{max-width:80%;padding:13px 15px;border-radius:18px;font-size:15px;line-height:1.45;animation:rise .3s var(--ease);}
+  .bub.ai{background:var(--surface2);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:5px;}
+  .bub.me{background:linear-gradient(135deg,var(--accentDark),var(--blue));align-self:flex-end;border-bottom-right-radius:5px;}
+  .composer{padding:14px 16px;display:flex;gap:10px;border-top:1px solid var(--line);}
+  .composer .field{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:22px;padding:12px 16px;color:var(--dim);}
+  .composer .send{width:44px;height:44px;border-radius:22px;background:linear-gradient(135deg,var(--accent),var(--blue));color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;}
+  .celebrate{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;}
+  .check{width:96px;height:96px;border-radius:48px;background:linear-gradient(135deg,var(--accent),var(--blue));color:#fff;display:flex;align-items:center;justify-content:center;font-size:52px;margin-bottom:24px;animation:pop .5s var(--ease);}
+  @keyframes pop{0%{transform:scale(0);}70%{transform:scale(1.1);}100%{transform:scale(1);}}
+  .map{height:290px;position:relative;overflow:hidden;background:#0a1725;}
+  .map>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.8;}
+  .map .tint{position:absolute;inset:0;background:linear-gradient(rgba(8,19,31,.25),rgba(8,19,31,.6));}
+  .map .car{position:absolute;font-size:34px;transition:all 1.6s var(--ease);filter:drop-shadow(0 4px 10px rgba(0,0,0,.6));z-index:3;}
+  .map .home{position:absolute;right:20%;bottom:24%;font-size:30px;z-index:2;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5));}
+  .livechip{position:absolute;top:16px;left:16px;background:rgba(8,19,31,.85);backdrop-filter:blur(8px);border-radius:12px;padding:7px 12px;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:var(--accent);z-index:4;}
+  .livedot{width:8px;height:8px;border-radius:4px;background:var(--accent);animation:blink 1.2s infinite;}
+  @keyframes blink{50%{opacity:.3;}}
+  .etacard{margin:-30px 20px 0;position:relative;z-index:5;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow);}
+  .etacard .eta{font-size:24px;font-weight:800;}
+  .etacard .st{color:var(--accent);font-size:14px;font-weight:700;margin-top:2px;}
+  .driver{display:flex;align-items:center;gap:14px;margin:16px 20px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;}
+  .driver .av{width:52px;height:52px;border-radius:26px;overflow:hidden;}
+  .driver .av img{width:100%;height:100%;object-fit:cover;}
+  .driver .call{margin-left:auto;width:44px;height:44px;border-radius:22px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:20px;}
+  .steps{margin:8px 20px 20px;}
+  .step{display:flex;gap:14px;}
+  .step .col{display:flex;flex-direction:column;align-items:center;}
+  .step .dot{width:20px;height:20px;border-radius:10px;border:2px solid var(--line);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;flex-shrink:0;}
+  .step.done .dot{background:var(--accent);border-color:var(--accent);}
+  .step.active .dot{border-color:var(--accent);background:var(--bg);}
+  .step .line{width:2px;flex:1;background:var(--line);min-height:22px;margin:2px 0;}
+  .step .line.done{background:var(--accent);}
+  .step .sl{font-size:15px;color:var(--dim);font-weight:600;padding-bottom:20px;}
+  .step.done .sl,.step.active .sl{color:var(--text);}
+  .banner{position:absolute;top:0;left:0;right:0;background:linear-gradient(90deg,var(--accent),var(--blue));color:#fff;text-align:center;font-size:10px;font-weight:800;padding:3px;letter-spacing:.4px;z-index:100;}
+  .skel{background:linear-gradient(100deg,#0E1E30 30%,#152A40 50%,#0E1E30 70%);background-size:200% 100%;animation:sh 1.2s infinite;}
+  @keyframes sh{to{background-position:-200% 0;}}
+  .brandwrap{display:flex;align-items:center;gap:12px;}
+  .logo-mark{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--blue));display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;color:#fff;box-shadow:0 8px 24px rgba(23,176,196,.35);}
+  /* role picker */
+  .rolecard{display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px;cursor:pointer;transition:.15s;}
+  .rolecard:active{transform:scale(.98);}
+  .rolecard:hover{border-color:var(--accent);}
+  .rolecard .ri{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--accent),var(--blue));display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;}
+  .rolecard .rt{font-size:18px;font-weight:800;}
+  .rolecard .rd{color:var(--dim);font-size:13px;margin-top:3px;line-height:1.35;}
+  .rolecard .chev{margin-left:auto;color:var(--dim);font-size:22px;}
+  /* stepper */
+  .stepper{display:flex;gap:6px;padding:0 20px 4px;}
+  .stepper .sd{flex:1;height:4px;border-radius:2px;background:var(--line);}
+  .stepper .sd.on{background:var(--accent);}
+  /* type grid */
+  .typegrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .typecard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;text-align:center;cursor:pointer;transition:.15s;}
+  .typecard:active{transform:scale(.97);}
+  .typecard.on{border-color:var(--accent);background:var(--surface2);}
+  .typecard .e{font-size:32px;}
+  .typecard .l{font-weight:700;margin-top:8px;font-size:14px;}
+  /* upload tiles */
+  .uptile{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px dashed var(--line);border-radius:14px;padding:16px;margin-bottom:12px;cursor:pointer;}
+  .uptile.done{border-style:solid;border-color:var(--accent);}
+  .uptile .ui{width:44px;height:44px;border-radius:12px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:22px;}
+  .uptile .ut{font-weight:600;}
+  .uptile .us{color:var(--dim);font-size:13px;margin-top:2px;}
+  .uptile .uc{margin-left:auto;font-size:20px;}
+  .pending{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;text-align:center;margin:0 20px;}
+  .pending .pi{font-size:44px;margin-bottom:10px;}
+  /* ---- Uber Eats-style home ---- */
+  .pillrow{display:flex;gap:10px;overflow-x:auto;padding:12px 20px 4px;}
+  .pillrow::-webkit-scrollbar{display:none;}
+  .fpill{flex:0 0 auto;display:flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--line);border-radius:22px;padding:10px 16px;font-size:15px;font-weight:600;cursor:pointer;color:var(--text);white-space:nowrap;}
+  .fpill.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .fpill .fe{font-size:16px;}
+  .filterrow{display:flex;gap:10px;overflow-x:auto;padding:6px 20px 10px;}
+  .filterrow::-webkit-scrollbar{display:none;}
+  .fchip{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:9px 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--text);white-space:nowrap;}
+  .emojirow{display:flex;gap:8px;overflow-x:auto;padding:10px 16px 12px;}
+  .emojirow::-webkit-scrollbar{display:none;}
+  .ecat{flex:0 0 auto;width:74px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;}
+  .ecat .ee{font-size:36px;line-height:1;height:40px;display:flex;align-items:center;justify-content:center;}
+  .ecat .el{font-size:12px;color:var(--dim);font-weight:500;white-space:nowrap;}
+  .featsec{padding:20px 20px 6px;display:flex;align-items:center;justify-content:space-between;}
+  .featsec h2{font-size:22px;font-weight:800;}
+  .featsec .arrow{width:36px;height:36px;border-radius:18px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:18px;}
+  .spons{color:var(--dim);font-size:13px;padding:0 20px 8px;text-decoration:underline;}
+  .hrail{display:flex;gap:14px;overflow-x:auto;padding:4px 20px 8px;scroll-snap-type:x mandatory;}
+  .hrail::-webkit-scrollbar{display:none;}
+  .promo{flex:0 0 300px;scroll-snap-align:start;cursor:pointer;}
+  .promo .pimg{height:180px;border-radius:var(--r);position:relative;overflow:hidden;}
+  .promo .pimg>img{width:100%;height:100%;object-fit:cover;}
+  .promo .deal{position:absolute;top:12px;left:12px;background:#E23744;color:#fff;font-size:13px;font-weight:800;padding:6px 10px;border-radius:8px;z-index:2;}
+  .promo .heart{position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:17px;background:rgba(8,19,31,.7);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:16px;z-index:2;}
+  .promo .pn{font-size:18px;font-weight:800;margin-top:10px;}
+  .promo .pmeta{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:14px;margin-top:4px;}
+  .promo .pmeta .oneb{width:18px;height:18px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;}
+  .promo .prate{display:flex;align-items:center;gap:5px;color:var(--text);font-size:14px;margin-top:4px;font-weight:600;}
+  .promo .prate .s{color:var(--star);}
+  .promo .tag{display:inline-flex;align-items:center;gap:5px;margin-top:8px;background:rgba(23,176,196,.14);color:var(--accent);border-radius:8px;padding:5px 9px;font-size:13px;font-weight:700;}
+  /* bottom bar with centre search (Uber style) */
+  .ubar{position:absolute;left:0;right:0;bottom:0;height:82px;background:rgba(8,19,31,.96);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 18px;padding-bottom:env(safe-area-inset-bottom,0);z-index:30;}
+  .ubar .ui{width:44px;height:44px;border-radius:22px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;color:var(--text);flex-shrink:0;}
+  .ubar .ui.on{color:var(--accent);border-color:var(--accent);}
+  .ubar .usearch{flex:1;height:44px;border-radius:22px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 16px;color:var(--dim);font-size:15px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="banner">PALTAS · INTERACTIVE UI PREVIEW · DEMO DATA</div>
+  <div class="viewport" id="vp"></div>
+  <div class="ubar" id="tabbar" style="display:none">
+    <div class="ui on" data-tab="home" onclick="tabTo('home')">🏠</div>
+    <div class="ui" data-tab="map" onclick="tabTo('home')">📍</div>
+    <div class="usearch" onclick="tabTo('search')">🔍 Search</div>
+    <div class="ui" data-tab="orders" onclick="tabTo('orders')">🧾</div>
+    <div class="ui" data-tab="account" onclick="tabTo('account')">👤</div>
+  </div>
+</div>
+<script>
+const money=n=>{try{return new Intl.NumberFormat("en-AE",{style:"currency",currency:"AED"}).format(n);}catch{return "AED "+n.toFixed(2);}};
+const U=(id,w=600)=>`https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&q=70`;
+const PH={
+  burger:U("1568901346375-23c9450c58cd"), fries:U("1573080496219-bb080dd4f877"),
+  spicyburger:U("1550547660-d9450f859349"), shake:U("1572490122747-3968b75cc699"),
+  sushi:U("1579584425555-c3ce17fd4351"), roll:U("1617196034796-73dfa7b1fd56"),
+  katsu:U("1604908176997-125f25cc6f3d"), shawarma:U("1529006557810-274b9b2fc783"),
+  hummus:U("1547058680-4ceb27a8f77e"), milk:U("1550583724-b2692b85b150"),
+  banana:U("1571771894821-ce9b6c11b08e"), bread:U("1509440159596-0249088772ff"),
+  pill:U("1584308666744-24d5c474f2ae"), vitamin:U("1607619056574-7b8d3ee536b2"),
+  novaCover:U("1571091718767-18b5b1457add",900), sakuraCover:U("1611143669185-af224c5e3252",900),
+  oliveCover:U("1540189549336-e6e99c3679fe",900), freshCover:U("1542838132-92c53300491e",900),
+  careCover:U("1587854692152-cbe660dbde88",900),
+  hero:U("1504674900247-0877df9cc836",900),
+  driver:U("1633332755192-727a05c4013d",200), user:U("1633332755192-727a05c4013d",120),
+  mapImg:U("1524661135-423995f22d0b",900)
+};
+const R=[
+  {id:"r1",name:"Nova Burgers",cuisine:"Burgers",type:"RESTAURANT",rating:4.7,fee:2.5,prep:"15–25 min",desc:"Smash burgers & loaded fries",cover:PH.novaCover,
+   menu:[{cat:"Popular",name:"Classic Smash",desc:"Double patty, cheese, house sauce",price:9,img:PH.burger},{cat:"Popular",name:"Loaded Fries",desc:"Cheese, bacon, chives",price:6,img:PH.fries},{cat:"Burgers",name:"Spicy Nova",desc:"Jalapeño, chipotle mayo",price:10.5,img:PH.spicyburger},{cat:"Drinks",name:"Milkshake",desc:"Vanilla or chocolate",price:4.5,img:PH.shake}]},
+  {id:"r2",name:"Sakura Express",cuisine:"Japanese",type:"RESTAURANT",rating:4.5,fee:3,prep:"20–30 min",desc:"Fresh sushi, fast",cover:PH.sakuraCover,
+   menu:[{cat:"Popular",name:"Salmon Nigiri (4pc)",desc:"Fresh Atlantic salmon",price:8,img:PH.sushi},{cat:"Rolls",name:"California Roll",desc:"Crab, avocado, cucumber",price:7.5,img:PH.roll},{cat:"Mains",name:"Chicken Katsu",desc:"Panko chicken, curry",price:11,img:PH.katsu}]},
+  {id:"r3",name:"Olive & Thyme",cuisine:"Mediterranean",type:"RESTAURANT",rating:4.8,fee:1.5,prep:"20–30 min",desc:"Fresh mezze & grills",cover:PH.oliveCover,
+   menu:[{cat:"Popular",name:"Chicken Shawarma Wrap",desc:"Garlic sauce, pickles",price:7,img:PH.shawarma},{cat:"Mezze",name:"Hummus Bowl",desc:"Olive oil, warm pita",price:5.5,img:PH.hummus}]},
+  {id:"s1",name:"FreshMart Grocery",cuisine:"Grocery",type:"GROCERY",rating:4.6,fee:1.5,prep:"10–20 min",desc:"Everyday groceries",cover:PH.freshCover,
+   menu:[{cat:"Dairy",name:"Milk 1L",desc:"Full-fat",price:1.8,img:PH.milk},{cat:"Produce",name:"Bananas 1kg",desc:"Ripe & sweet",price:2.2,img:PH.banana},{cat:"Bakery",name:"Bread",desc:"Whole wheat",price:2,img:PH.bread}]},
+  {id:"s2",name:"CarePlus Pharmacy",cuisine:"Pharmacy",type:"PHARMACY",rating:4.6,fee:2,prep:"15–25 min",desc:"Health essentials",cover:PH.careCover,
+   menu:[{cat:"Medicine",name:"Paracetamol 500mg",desc:"16 tablets",price:3,img:PH.pill},{cat:"Supplements",name:"Vitamin C",desc:"1000mg, 30 tabs",price:6.5,img:PH.vitamin}]},
+];
+const CATS=[["ALL","🍽️","All",PH.hero],["RESTAURANT",null,"Food",PH.burger],["GROCERY",null,"Grocery",PH.milk],["PHARMACY",null,"Pharmacy",PH.pill],["RETAIL","🛍️","Retail",PH.bread]];
+let S={filter:"ALL",rest:null,cart:[],tab:"home",surge:1};
+// ---- Surge pricing engine (like Uber): demand tier raises the delivery rate ----
+// tier 0 = normal (1×), 1 = busy (1.5×), 2 = high demand (2× / double)
+const SURGE_TIERS=[
+  {mult:1,   label:"Standard rate",  color:"var(--accent)", note:"Normal demand"},
+  {mult:1.5, label:"Busy · 1.5×",    color:"#FFB020",       note:"More orders than usual"},
+  {mult:2,   label:"High demand · 2×",color:"#FF5A5A",      note:"Surge — rate doubled"},
+];
+let liveOrders=6; // simulated live orders in the area; drives surge
+function surgeTier(){ return liveOrders>=12?2 : liveOrders>=9?1 : 0; }
+function surgeMult(){ return SURGE_TIERS[surgeTier()].mult; }
+function dynFee(baseFee){ return Math.round(baseFee*surgeMult()*100)/100; }
+// distance helper — each restaurant gets a demo km; price scales a little with km
+function kmFor(r){ return r._km ?? (r._km = +(1.2+Math.random()*4.6).toFixed(1)); }
+function surgeBadge(){
+  const t=SURGE_TIERS[surgeTier()];
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid ${t.color};border-radius:20px;padding:6px 12px;font-size:12px;font-weight:800;color:${t.color}">⚡ ${t.label}</div>`;
+}
+const vp=document.getElementById("vp"),tabbar=document.getElementById("tabbar");
+function render(fn,cls){vp.scrollTop=0;const v=document.createElement("div");v.className="view "+(cls||"rise");fn(v);vp.innerHTML="";vp.appendChild(v);}
+const cnt=()=>S.cart.reduce((a,l)=>a+l.qty,0);
+const sub=()=>S.cart.reduce((a,l)=>a+l.price*l.qty,0);
+function showTabs(on){tabbar.style.display=on?"flex":"none";}
+function setTab(t){S.tab=t;[...tabbar.children].forEach(c=>c.classList.toggle("on",c.dataset.tab===t));}
+const fallback=`this.onerror=null;this.style.display='none';this.parentElement.classList.add('skel')`;
+
+function Login(){showTabs(false);render(v=>{v.innerHTML=`
+   <div class="pad" style="padding-top:60px;display:flex;flex-direction:column;height:100%">
+     <div class="brandwrap"><div class="logo-mark">P</div><div><div style="font-size:34px;font-weight:900;letter-spacing:-1px;line-height:1">PALTAS</div><div style="color:var(--accent);font-size:11px;font-weight:700;letter-spacing:3px">SMART LIVING</div></div></div>
+     <div style="flex:1"></div>
+     <h1 style="margin-bottom:6px">Order anything,<br>delivered.</h1>
+     <div class="dim" style="margin-bottom:24px">Food, groceries & more — in minutes.</div>
+     <div class="dim" style="font-size:13px;margin:0 0 8px 4px">Country</div>
+     <div class="rail" style="padding:0 0 14px">${["🇦🇪 UAE","🇺🇸 USA","🇬🇧 UK","🇮🇳 India"].map((c,i)=>`<div class="cat ${i===0?'on':''}" onclick="pick(this)" style="width:auto"><div class="bubble" style="width:auto;height:44px;padding:0 16px;font-size:15px;border-radius:14px;display:flex;align-items:center;justify-content:center">${c}</div></div>`).join("")}</div>
+     <div class="dim" style="font-size:13px;margin:0 0 8px 4px">Phone number</div>
+     <input class="input" value="+971 50 123 4567" />
+     <button class="btn" onclick="Home('slide-in')">Continue</button>
+     <div style="text-align:center;color:var(--dim);font-size:12px;margin:14px 0 4px">Tap Continue — this is a preview</div>
+   </div>`;});}
+function pick(n){[...n.parentElement.children].forEach(c=>c.classList.remove("on"));n.classList.add("on");}
+
+const FPILLS=[["ALL","🛍️","All"],["RESTAURANT","🍔","Food"],["GROCERY","🍌","Grocery"],["PHARMACY","💊","Pharmacy"],["RETAIL","🛍️","Retail"]];
+const ECATS=[["🍕","Pizza"],["🍦","Ice cream"],["🍟","Fast food"],["🍔","Burgers"],["🍗","Chicken"],["🌮","Tacos"],["🍣","Sushi"],["🥗","Healthy"]];
+const DEALS=[
+  {r:"r1",deal:"AED 15 off",tag:"🏅 #1 Fast food"},
+  {r:"r3",deal:"AED 10 off",tag:"🏆 Best Overall"},
+  {r:"r2",deal:"AED 12 off",tag:null},
+];
+function Home(cls){showTabs(true);setTab("home");render(v=>{
+  const list=R.filter(r=>S.filter==="ALL"||r.type===S.filter);
+  const t=SURGE_TIERS[surgeTier()];
+  v.className="view haspad "+(cls||"rise");
+  v.innerHTML=`<div class="safe"></div>
+    <div class="loc"><span class="pin">📍</span><span class="where">Marina Walk</span><span class="chev">▾</span><div class="ui" style="margin-left:auto;width:40px;height:40px;border-radius:20px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:18px">🔔</div></div>
+    <div class="pillrow">${FPILLS.map(([v2,e,l])=>`<div class="fpill ${S.filter===v2?'on':''}" onclick="setFilter('${v2}')"><span class="fe">${e}</span>${l}</div>`).join("")}</div>
+    <div class="emojirow">${ECATS.map(([e,l])=>`<div class="ecat" onclick="setFilter('RESTAURANT')"><div class="ee">${e}</div><div class="el">${l}</div></div>`).join("")}</div>
+    <div class="filterrow">
+      <div class="fchip">🚶 Pick-up</div><div class="fchip">🏷️ Offers</div><div class="fchip">Delivery Fee ▾</div><div class="fchip">Under 30 min</div><div class="fchip">Top rated</div>
+    </div>
+    <div style="margin:6px 20px 0;background:var(--surface);border:1px solid ${t.color};border-radius:16px;padding:13px 16px;display:flex;align-items:center;justify-content:space-between">
+      <div><div style="font-weight:800;color:${t.color};font-size:14px">⚡ ${t.label}</div><div class="dim" style="font-size:12px;margin-top:2px">${liveOrders} orders live · fees ${surgeMult()}×</div></div>
+      <div style="display:flex;gap:6px"><div class="ui" style="width:38px;height:38px;font-size:18px" onclick="setDemand(-3)">−</div><div class="ui on" style="width:38px;height:38px;font-size:18px" onclick="setDemand(3)">+</div></div>
+    </div>
+    <div class="featsec"><h2>Featured on Paltas</h2><div class="arrow">→</div></div>
+    <div class="spons">Sponsored</div>
+    <div class="hrail">${DEALS.map(d=>promoCard(R.find(r=>r.id===d.r),d)).join("")}</div>
+    <div class="featsec"><h2>${S.filter==="ALL"?"All restaurants":FPILLS.find(c=>c[0]===S.filter)[2]}</h2><div class="arrow">→</div></div>
+    ${list.map(rcard).join("")}<div style="height:10px"></div>`;
+});}
+function setDemand(d){ liveOrders=Math.max(2,Math.min(16,liveOrders+d)); Home(); }
+function promoCard(r,d){
+  const km=kmFor(r),fee=dynFee(r.fee),surged=surgeMult()>1;
+  return`
+  <div class="promo" onclick="openR('${r.id}')">
+    <div class="pimg"><img src="${r.cover}" onerror="${fallback}"><div class="deal">${d.deal}</div><div class="heart">🤍</div></div>
+    <div class="pn">${r.name}</div>
+    <div class="pmeta"><span class="oneb">1</span> ${money(fee)} delivery${surged?` ⚡`:""}</div>
+    <div class="prate"><span class="s">★</span> ${r.rating} · ${km} km · ${r.prep}</div>
+    ${d.tag?`<div class="tag">${d.tag}</div>`:""}
+  </div>`;}
+function rcard(r){
+  const km=kmFor(r), fee=dynFee(r.fee), surged=surgeMult()>1;
+  return`
+  <div class="rcard" onclick="openR('${r.id}')">
+    <div class="img"><img src="${r.cover}" onerror="${fallback}"><div class="grad"></div><div class="badge">★ ${r.rating}</div><div class="heart">🤍</div>
+      <div class="fee"><span class="oneb" style="display:inline-flex;width:16px;height:16px;border-radius:8px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;vertical-align:middle">1</span> ${km} km · ${money(fee)}${surged?` <span style="color:#FFB020">⚡</span>`:""}</div></div>
+    <div class="meta"><div class="row1"><div class="rname">${r.name}</div><div class="rate"><span class="s">★</span> ${r.rating}</div></div><div class="sub">${r.desc} · ${r.prep}</div></div>
+  </div>`;}
+function setFilter(f){S.filter=f;Home();}
+
+function openR(id){S.rest=R.find(r=>r.id===id);S.cart=[];Menu();}
+function Menu(){showTabs(false);render(v=>{
+  const r=S.rest,cats=[...new Set(r.menu.map(m=>m.cat))];
+  v.innerHTML=`<div class="mback" onclick="Home()">‹</div>
+    <div class="mhead"><img src="${r.cover}" onerror="${fallback}"><div class="grad"></div><div class="info"><h1>${r.name}</h1><div class="sub">★ ${r.rating} · ${r.prep} · ${money(r.fee)} delivery</div></div></div>
+    <div class="aiband" onclick="Chat()"><div class="glow">✨</div><div style="flex:1"><div class="t">Order by chat</div><div class="d">Tell our AI what you want</div></div><div class="dim" style="font-size:20px">›</div></div>
+    ${cats.map(c=>`<div class="cathead">${c}</div>${r.menu.filter(m=>m.cat===c).map(m=>`<div class="mrow" onclick='add(${JSON.stringify({name:m.name,price:m.price}).replace(/'/g,"&#39;")})'><div class="txt"><div class="mn">${m.name}</div>${m.desc?`<div class="md">${m.desc}</div>`:""}<div class="mp">${money(m.price)}</div></div><div class="thumb"><img src="${m.img}" onerror="${fallback}"><div class="addb">+</div></div></div>`).join("")}`).join("")}
+    <div style="height:110px"></div>
+    ${cnt()>0?`<div class="cartpill" onclick="Checkout()"><div class="c">${cnt()}</div><div style="flex:1">View cart</div><div>${money(sub())}</div></div>`:""}`;
+},"rise");}
+function add(m){const e=S.cart.find(l=>l.name===m.name);if(e)e.qty++;else S.cart.push({name:m.name,price:m.price,qty:1});Menu();}
+
+function Chat(){showTabs(false);render(v=>{v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="Menu()">‹</div><h2>✨ Paltas AI</h2></div>
+    <div class="chat">
+      <div class="bub ai">Hi! I'm your Paltas assistant for ${S.rest.name}. What are you in the mood for?</div>
+      <div class="bub me">a smash burger and a shake</div>
+      <div class="bub ai">On it! Added a <b>Classic Smash</b> (${money(9)}) and a <b>Milkshake</b> (${money(4.5)}). Want fries with that?</div>
+      <div class="bub me">yes loaded fries</div>
+      <div class="bub ai">Added <b>Loaded Fries</b> (${money(6)}). Your subtotal is <b>${money(19.5)}</b>. Ready to check out?</div>
+    </div>
+    <div class="composer"><div class="field">Message…</div><div class="send" onclick="fromChat()">↑</div></div>`;
+},"slide-in");}
+function fromChat(){S.cart=[{name:"Classic Smash",price:9,qty:1},{name:"Milkshake",price:4.5,qty:1},{name:"Loaded Fries",price:6,qty:1}];Checkout();}
+
+function Checkout(){showTabs(false);render(v=>{
+  const s=sub();
+  const baseFee=S.rest?.fee??2.5;
+  const km=S.rest?kmFor(S.rest):3.0;
+  const fee=dynFee(baseFee);
+  const surged=surgeMult()>1;
+  const tip=2,tot=s+fee+tip;
+  const t=SURGE_TIERS[surgeTier()];
+  v.innerHTML=`<div class="appbar"><div class="iconbtn" onclick="Menu()">‹</div><h2>Checkout</h2></div>
+    <div class="pad">
+      <div class="driver" style="margin:0 0 16px"><span style="font-size:22px">📍</span><div><div style="font-weight:700">Deliver to Marina Walk</div><div class="dim" style="font-size:13px">${km} km · 15–25 min</div></div></div>
+      ${surged?`<div style="background:var(--surface);border:1px solid ${t.color};border-radius:14px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px"><span style="font-size:20px">⚡</span><div><div style="font-weight:800;color:${t.color};font-size:14px">${t.label}</div><div class="dim" style="font-size:12px">Delivery costs more right now due to high demand</div></div></div>`:""}
+      <h2 style="margin:6px 0 10px">${S.rest?.name||"Your order"}</h2>
+      ${S.cart.map(l=>`<div class="srow"><div>${l.qty}× ${l.name}</div><div>${money(l.price*l.qty)}</div></div>`).join("")}
+      <div class="divider"></div>
+      <div class="srow"><div class="dim">Subtotal</div><div>${money(s)}</div></div>
+      <div class="srow"><div class="dim">Delivery (${km} km)${surged?` · ${surgeMult()}×`:""}</div><div style="${surged?`color:${t.color};font-weight:700`:""}">${money(fee)}</div></div>
+      ${surged?`<div class="srow" style="font-size:13px"><div class="dim">↳ base ${money(baseFee)} × ${surgeMult()} surge</div><div class="dim">+${money(fee-baseFee)}</div></div>`:""}
+      <div class="srow"><div class="dim">Tip</div><div>${money(tip)}</div></div>
+      <div class="divider"></div>
+      <div class="srow"><div style="font-weight:700">Total</div><div class="total">${money(tot)}</div></div>
+      <div class="dim" style="font-size:13px;margin:18px 0 6px">Payment</div>
+      <div class="paycard"><div class="visa">VISA</div><div style="flex:1;font-weight:600">•••• 4242</div><div class="dim">›</div></div>
+      <div style="height:20px"></div>
+      <button class="btn" onclick="Placed()">Place order · ${money(tot)}</button>
+    </div>`;
+},"slide-in");}
+
+function Placed(){showTabs(false);render(v=>{v.innerHTML=`<div class="celebrate"><div class="check">✓</div><h1>Order placed</h1><div class="dim" style="margin:8px 0 30px">#A4F9C2 · ${S.rest?.name||"Paltas"}</div><button class="btn" onclick="startTrack()">Track your order</button></div>`;});}
+
+const STEPS=[["Order placed","We've got your order"],["Restaurant confirmed","Nova Burgers accepted"],["Preparing your food","Chef's on it"],["Ready for pickup","Finding a driver"],["Driver on the way","Sara is heading over"],["Picked up","Order collected"],["Almost there","Around the corner"],["Delivered","Enjoy!"]];
+let ti=4;
+function startTrack(){ti=4;Track();stepTimer();}
+function stepTimer(){if(ti<STEPS.length-1)setTimeout(()=>{if(document.getElementById("trk")){ti++;Track();stepTimer();}},1900);}
+function Track(){showTabs(false);render(v=>{
+  const cur=STEPS[ti],showD=ti>=4,prog=(ti-4)/(STEPS.length-1-4),cx=18+prog*58,cy=30+prog*36;
+  v.innerHTML=`<div id="trk"></div>
+    <div class="map"><img src="${PH.mapImg}" onerror="${fallback}"><div class="tint"></div>
+      <div class="home">🏠</div><div class="car" style="left:${cx}%;top:${cy}%">🛵</div>
+      <div class="livechip"><span class="livedot"></span> LIVE</div>
+      <div class="mback" onclick="Home()">‹</div>
+    </div>
+    <div class="etacard"><div class="eta">${ti>=7?"Delivered":"12 min away"}</div><div class="st">${cur[0]}</div></div>
+    ${showD?`<div class="driver"><div class="av"><img src="${PH.driver}" onerror="${fallback}"></div><div><div style="font-weight:700">Sara Driver</div><div class="dim" style="font-size:13px">White Toyota Corolla · A 12345</div></div><div class="call">📞</div></div>`:""}
+    <div class="steps">${STEPS.map((s,i)=>`<div class="step ${i<ti?'done':i===ti?'active':''}"><div class="col"><div class="dot">${i<ti?'✓':''}</div>${i<STEPS.length-1?`<div class="line ${i<ti?'done':''}"></div>`:""}</div><div class="sl">${s[0]}</div></div>`).join("")}</div>
+    <div style="height:20px"></div>`;
+});}
+
+// ---- past & live orders (clickable) with km, price, surge ----
+const ORDERS=[
+  {id:"A4F9C2",rest:"Nova Burgers",cover:PH.novaCover,status:"In progress",km:2.4,when:"Now",surge:2,
+   items:[["Classic Smash",1,9],["Milkshake",1,4.5],["Loaded Fries",1,6]],baseFee:2.5,tip:2},
+  {id:"B21K9",rest:"Olive & Thyme",cover:PH.oliveCover,status:"Delivered",km:1.8,when:"Yesterday",surge:1,
+   items:[["Chicken Shawarma Wrap",2,7]],baseFee:1.5,tip:1.5},
+  {id:"C88M4",rest:"Sakura Express",cover:PH.sakuraCover,status:"Delivered",km:4.6,when:"Mon",surge:1.5,
+   items:[["Salmon Nigiri (4pc)",1,8],["California Roll",1,7.5]],baseFee:3,tip:2},
+];
+function OrderDetail(id){showTabs(false);render(v=>{
+  const o=ORDERS.find(x=>x.id===id);
+  const itemsTotal=o.items.reduce((a,[,q,p])=>a+q*p,0);
+  const fee=Math.round(o.baseFee*o.surge*100)/100;
+  const total=itemsTotal+fee+o.tip;
+  const live=o.status==="In progress";
+  v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="tabTo('orders')">‹</div><h2>Order #${o.id}</h2></div>
+    <div class="pad">
+      <div class="rcard" style="margin:0 0 16px"><div class="img" style="height:130px"><img src="${o.cover}" onerror="${fallback}"><div class="grad"></div><div class="badge" style="color:${live?'var(--accent)':'var(--dim)'}">${o.status}</div></div></div>
+      <div style="display:flex;gap:12px;margin-bottom:16px">
+        <div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px"><div class="dim" style="font-size:12px">Distance</div><div style="font-size:20px;font-weight:800">${o.km} km</div></div>
+        <div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px"><div class="dim" style="font-size:12px">Total</div><div style="font-size:20px;font-weight:800;color:var(--accent)">${money(total)}</div></div>
+      </div>
+      <h2 style="margin-bottom:8px">${o.rest}</h2>
+      ${o.items.map(([n,q,p])=>`<div class="srow"><div>${q}× ${n}</div><div>${money(q*p)}</div></div>`).join("")}
+      <div class="divider"></div>
+      <div class="srow"><div class="dim">Subtotal</div><div>${money(itemsTotal)}</div></div>
+      <div class="srow"><div class="dim">Delivery (${o.km} km)${o.surge>1?` · ${o.surge}×`:""}</div><div style="${o.surge>1?'color:#FFB020;font-weight:700':''}">${money(fee)}</div></div>
+      ${o.surge>1?`<div class="srow" style="font-size:13px"><div class="dim">↳ ${money(o.baseFee)} base × ${o.surge} surge (high demand)</div><div class="dim">+${money(fee-o.baseFee)}</div></div>`:""}
+      <div class="srow"><div class="dim">Tip</div><div>${money(o.tip)}</div></div>
+      <div class="divider"></div>
+      <div class="srow"><div style="font-weight:700">Total</div><div class="total">${money(total)}</div></div>
+      <div style="height:16px"></div>
+      ${live?`<button class="btn" onclick="startTrack()">Track live</button>`:`<button class="btn" style="background:var(--surface2);color:var(--text);border:1px solid var(--line)" onclick="reorder('${o.id}')">Reorder</button>`}
+    </div>`;
+});}
+function reorder(id){const o=ORDERS.find(x=>x.id===id);S.rest=R.find(r=>r.name===o.rest)||R[0];S.cart=o.items.map(([n,q,p])=>({name:n,price:p,qty:q}));Checkout();}
+
+function tabTo(t){setTab(t);
+  if(t==="home")return Home();
+  if(t==="orders")return render(v=>{v.className="view haspad rise";v.innerHTML=`<div class="safe"></div><div class="pad"><h1>Your orders</h1></div>
+     ${ORDERS.map(o=>`<div class="rcard" onclick="OrderDetail('${o.id}')"><div class="img" style="height:120px"><img src="${o.cover}" onerror="${fallback}"><div class="grad"></div><div class="badge" style="color:${o.status==='In progress'?'var(--accent)':'var(--dim)'}">${o.status}</div>${o.surge>1?`<div class="fee" style="color:#FFB020">⚡ ${o.surge}× surge</div>`:""}</div><div class="meta"><div class="row1"><div class="rname">${o.rest}</div><div class="dim">${money(o.total)}</div></div><div class="sub">#${o.id} · ${o.km} km · ${o.when}</div></div></div>`).join("")}`;});
+  if(t==="search")return render(v=>{v.className="view haspad rise";v.innerHTML=`<div class="safe"></div><div class="pad"><h1>Search</h1></div><div class="search" style="margin:0 20px">🔍 Restaurants, groceries, dishes…</div><div class="rail" style="flex-wrap:wrap;gap:8px">${["Burgers","Sushi","Pizza","Grocery","Pharmacy","Healthy","Coffee","Dessert"].map(t=>`<div style="border:1px solid var(--line);background:var(--surface2);border-radius:20px;padding:9px 16px;font-size:14px;font-weight:600">${t}</div>`).join("")}</div>`;});
+  if(t==="account")return render(v=>{v.className="view haspad rise";v.innerHTML=`<div class="safe"></div><div class="pad"><div style="display:flex;align-items:center;gap:16px;margin-bottom:24px"><div style="width:64px;height:64px;border-radius:32px;overflow:hidden"><img src="${PH.user}" style="width:100%;height:100%;object-fit:cover" onerror="${fallback}"></div><div><h2>Ahmed</h2><div class="dim">+971 50 123 4567 · 🇦🇪 UAE</div></div></div>${["Payment methods","Addresses","Paltas One","Help","Settings"].map(x=>`<div class="paycard" style="margin-top:10px"><div style="flex:1;font-weight:600">${x}</div><div class="dim">›</div></div>`).join("")}</div>`;});
+}
+// ============ ROLE PICKER (entry) ============
+function Roles(){showTabs(false);render(v=>{v.innerHTML=`
+  <div class="pad" style="padding-top:56px;display:flex;flex-direction:column;height:100%">
+    <div class="brandwrap"><div class="logo-mark">P</div><div><div style="font-size:30px;font-weight:900;letter-spacing:-1px;line-height:1">PALTAS</div><div style="color:var(--accent);font-size:11px;font-weight:700;letter-spacing:3px">SMART LIVING</div></div></div>
+    <div style="margin-top:36px"><h1>Welcome to Paltas</h1><div class="dim" style="margin-top:8px">How would you like to join?</div></div>
+    <div style="margin-top:28px">
+      <div class="rolecard" onclick="Login()"><div class="ri">🛍️</div><div><div class="rt">Order food & more</div><div class="rd">Browse restaurants, groceries & pharmacies near you</div></div><div class="chev">›</div></div>
+      <div class="rolecard" onclick="mSignup(0)"><div class="ri">🏪</div><div><div class="rt">Partner with us</div><div class="rd">List your restaurant, grocery or shop on Paltas</div></div><div class="chev">›</div></div>
+      <div class="rolecard" onclick="dSignup(0)"><div class="ri">🛵</div><div><div class="rt">Become a driver</div><div class="rd">Deliver with Paltas and earn on your schedule</div></div><div class="chev">›</div></div>
+    </div>
+    <div style="flex:1"></div>
+    <div id="installbtn" style="display:none;align-items:center;justify-content:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--blue));color:#fff;border-radius:14px;padding:14px;font-weight:800;cursor:pointer;margin-bottom:12px" onclick="doInstall()">⬇️ Install Paltas app</div>
+    <div style="text-align:center;color:var(--dim);font-size:12px">Preview — tap any role to see its onboarding</div>
+  </div>`;});}
+
+// ============ MERCHANT ONBOARDING ============
+let M={type:"RESTAURANT"};
+const MTYPES=[["RESTAURANT","🍔","Restaurant"],["GROCERY","🛒","Grocery"],["PHARMACY","💊","Pharmacy"],["RETAIL","🛍️","Retail"]];
+function mStepper(i){return `<div class="stepper">${[0,1,2].map(s=>`<div class="sd ${s<=i?'on':''}"></div>`).join("")}</div>`;}
+function mSignup(step){showTabs(false);render(v=>{
+  if(step===0){v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="Roles()">‹</div><h2>Partner signup</h2></div>
+    ${mStepper(0)}
+    <div class="pad">
+      <h2 style="margin-bottom:4px">What type of business?</h2>
+      <div class="dim" style="margin-bottom:18px">Choose the category that fits you</div>
+      <div class="typegrid">${MTYPES.map(([v2,e,l])=>`<div class="typecard ${M.type===v2?'on':''}" onclick="mType('${v2}')"><div class="e">${e}</div><div class="l">${l}</div></div>`).join("")}</div>
+      <div style="height:24px"></div>
+      <button class="btn" onclick="mSignup(1)">Continue</button>
+    </div>`;}
+  else if(step===1){v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="mSignup(0)">‹</div><h2>Business details</h2></div>
+    ${mStepper(1)}
+    <div class="pad">
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Business name</div>
+      <input class="input" placeholder="e.g. Nova Burgers" value="Nova Burgers" />
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Address</div>
+      <input class="input" placeholder="Street, area, city" value="12 Marina Walk, Dubai" />
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Owner name</div>
+      <input class="input" placeholder="Full name" value="Hanad Omar" />
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Phone</div>
+      <input class="input" value="+971 55 111 2222" />
+      <button class="btn" onclick="mSignup(2)">Continue</button>
+    </div>`;}
+  else{v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="mSignup(1)">‹</div><h2>Almost done</h2></div>
+    ${mStepper(2)}
+    <div class="pad">
+      <div class="pending"><div class="pi">🏪</div><div style="font-weight:800;font-size:18px">You're all set!</div><div class="dim" style="margin-top:8px">Your ${MTYPES.find(t=>t[0]===M.type)[2]} is ready. Add your menu and start taking orders.</div></div>
+      <div style="height:20px"></div>
+      <button class="btn" onclick="MerchantDash()">Go to dashboard</button>
+    </div>`;}
+});}
+function mType(t){M.type=t;mSignup(0);}
+function MerchantDash(){showTabs(false);render(v=>{
+  const items=[["Classic Smash",9,"New order"],["Loaded Fries",6,""],["Milkshake",4.5,""]];
+  v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="Roles()">‹</div><h2>Nova Burgers</h2><div class="iconbtn" style="background:var(--accent);color:#fff;font-size:13px;font-weight:800;width:auto;padding:0 12px">OPEN</div></div>
+    <div class="pad">
+      <div style="display:flex;gap:12px;margin-bottom:18px">
+        <div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px"><div class="dim" style="font-size:12px">Today's orders</div><div style="font-size:26px;font-weight:800;color:var(--accent)">12</div></div>
+        <div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px"><div class="dim" style="font-size:12px">Revenue</div><div style="font-size:26px;font-weight:800">${money(184)}</div></div>
+      </div>
+      <h2 style="margin-bottom:10px">Live orders</h2>
+      <div style="background:var(--surface);border:1px solid var(--accent);border-radius:16px;padding:16px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between"><div style="font-weight:800">#A4F9C2</div><div style="color:var(--accent);font-weight:700">New</div></div>
+        <div class="dim" style="font-size:14px;margin:6px 0 12px">1× Classic Smash · 1× Milkshake · ${money(13.5)}</div>
+        <div style="display:flex;gap:10px"><button class="btn" style="padding:12px" onclick="MerchantDash()">Accept</button><button class="btn" style="padding:12px;background:var(--surface2);color:var(--dim)">Reject</button></div>
+      </div>
+      <h2 style="margin:18px 0 10px">Your menu</h2>
+      ${items.map(([n,p])=>`<div class="paycard" style="margin-top:0;margin-bottom:10px"><div style="flex:1"><div style="font-weight:600">${n}</div><div class="dim" style="font-size:13px">${money(p)}</div></div><div class="dim">✎</div></div>`).join("")}
+    </div>`;
+});}
+
+// ============ DRIVER ONBOARDING ============
+let D={docs:{license:false,id:false,vehicle:false}};
+function dStepper(i){return `<div class="stepper">${[0,1,2,3].map(s=>`<div class="sd ${s<=i?'on':''}"></div>`).join("")}</div>`;}
+function dSignup(step){showTabs(false);render(v=>{
+  if(step===0){v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="Roles()">‹</div><h2>Driver signup</h2></div>
+    ${dStepper(0)}
+    <div class="pad">
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Full name</div>
+      <input class="input" placeholder="Full name" value="Sara Ahmed" />
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Phone</div>
+      <input class="input" value="+971 55 333 4444" />
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">City</div>
+      <input class="input" value="Dubai" />
+      <button class="btn" onclick="dSignup(1)">Continue</button>
+    </div>`;}
+  else if(step===1){v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="dSignup(0)">‹</div><h2>Your vehicle</h2></div>
+    ${dStepper(1)}
+    <div class="pad">
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Vehicle type</div>
+      <div class="typegrid" style="margin-bottom:14px">${[["🛵","Scooter"],["🚗","Car"],["🚲","Bicycle"],["🏍️","Motorbike"]].map(([e,l],i)=>`<div class="typecard ${i===0?'on':''}" onclick="dPickVeh(this)"><div class="e">${e}</div><div class="l">${l}</div></div>`).join("")}</div>
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Make & model</div>
+      <input class="input" value="Toyota Corolla" />
+      <div class="dim" style="font-size:13px;margin:0 0 6px 4px">Plate number</div>
+      <input class="input" value="A 12345" />
+      <button class="btn" onclick="dSignup(2)">Continue</button>
+    </div>`;}
+  else if(step===2){v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="dSignup(1)">‹</div><h2>Verification</h2></div>
+    ${dStepper(2)}
+    <div class="pad">
+      <div class="dim" style="margin-bottom:16px">Upload your documents for KYC review</div>
+      <div class="uptile ${D.docs.license?'done':''}" onclick="dUpload('license')"><div class="ui">🪪</div><div><div class="ut">Driver's license</div><div class="us">${D.docs.license?'Uploaded':'Tap to upload'}</div></div><div class="uc">${D.docs.license?'✅':'⬆️'}</div></div>
+      <div class="uptile ${D.docs.id?'done':''}" onclick="dUpload('id')"><div class="ui">🆔</div><div><div class="ut">Emirates ID / Passport</div><div class="us">${D.docs.id?'Uploaded':'Tap to upload'}</div></div><div class="uc">${D.docs.id?'✅':'⬆️'}</div></div>
+      <div class="uptile ${D.docs.vehicle?'done':''}" onclick="dUpload('vehicle')"><div class="ui">📄</div><div><div class="ut">Vehicle registration</div><div class="us">${D.docs.vehicle?'Uploaded':'Tap to upload'}</div></div><div class="uc">${D.docs.vehicle?'✅':'⬆️'}</div></div>
+      <div style="height:14px"></div>
+      <button class="btn" onclick="dSignup(3)">Submit for review</button>
+    </div>`;}
+  else{v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="Roles()">‹</div><h2>Under review</h2></div>
+    ${dStepper(3)}
+    <div class="pad">
+      <div class="pending"><div class="pi">⏳</div><div style="font-weight:800;font-size:18px">Application submitted</div><div class="dim" style="margin-top:8px">Our team is reviewing your documents. You'll be notified once approved — usually within 24 hours.</div></div>
+      <div style="height:20px"></div>
+      <button class="btn" onclick="DriverHome()">Preview driver home</button>
+    </div>`;}
+});}
+function dPickVeh(n){[...n.parentElement.children].forEach(c=>c.classList.remove("on"));n.classList.add("on");}
+function dUpload(k){D.docs[k]=true;dSignup(2);}
+function DriverHome(){showTabs(false);render(v=>{v.innerHTML=`
+    <div class="appbar"><div class="iconbtn" onclick="Roles()">‹</div><h2>Driver</h2><div class="iconbtn" style="background:var(--accent);color:#fff;font-size:12px;font-weight:800;width:auto;padding:0 12px">ONLINE</div></div>
+    <div class="pad">
+      <div style="display:flex;gap:12px;margin-bottom:18px">
+        <div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px"><div class="dim" style="font-size:12px">Today</div><div style="font-size:24px;font-weight:800;color:var(--accent)">${money(86)}</div></div>
+        <div style="flex:1;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px"><div class="dim" style="font-size:12px">Trips</div><div style="font-size:24px;font-weight:800">7</div></div>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--accent);border-radius:18px;padding:18px">
+        <div style="color:var(--accent);font-weight:800;margin-bottom:8px">🛵 New delivery request</div>
+        <div style="font-weight:700">Nova Burgers → Marina Walk</div>
+        <div class="dim" style="font-size:14px;margin:6px 0 14px">2.4 km · ${money(8)} · 2 items</div>
+        <div style="display:flex;gap:10px"><button class="btn" style="padding:13px" onclick="DriverHome()">Accept</button><button class="btn" style="padding:13px;background:var(--surface2);color:var(--dim)">Decline</button></div>
+      </div>
+    </div>`;
+});}
+
+// ---- PWA: register service worker + install prompt ----
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+let deferredPrompt=null;
+window.addEventListener("beforeinstallprompt",(e)=>{
+  e.preventDefault(); deferredPrompt=e;
+  const b=document.getElementById("installbtn"); if(b) b.style.display="flex";
+});
+function doInstall(){
+  if(deferredPrompt){ deferredPrompt.prompt(); deferredPrompt.userChoice.then(()=>{deferredPrompt=null;const b=document.getElementById("installbtn");if(b)b.style.display="none";}); }
+}
+
+Roles();
+</script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+// Palta — Prisma schema (Day 1)
+// 7 core models. This is the data spine of the whole platform.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  DRIVER
+  ADMIN
+  RESTAURANT
+}
+
+// A merchant can be a restaurant or another kind of shop. The Restaurant
+// model is kept (so nothing else changes); this just widens what it is.
+enum MerchantType {
+  RESTAURANT
+  GROCERY
+  PHARMACY
+  RETAIL
+  CONVENIENCE
+}
+
+enum DeliveryType {
+  DELIVERY
+  PICKUP
+}
+
+// Every delivery — food, shop order, or parcel — is one Job type.
+// This is the PALTA ORDER -> DISPATCH -> DELIVERY unification.
+enum JobType {
+  FOOD
+  SHOP
+  PARCEL
+}
+
+enum ParcelSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  PLACED
+  ACCEPTED
+  PREPARING
+  READY
+  DRIVER_ASSIGNED
+  PICKED_UP
+  DELIVERING
+  DELIVERED
+  CANCELLED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  email     String?
+  name      String?
+  role      UserRole @default(CUSTOMER)
+  // Multi-role identity: one Palta account, many roles (Ahmed = customer +
+  // merchant + driver). `role` above stays as the default/primary for
+  // backward-compat; `roles` is the authoritative set going forward.
+  roles     UserRole[] @default([CUSTOMER])
+  country   String   @default("AE")
+  pushToken String?
+  createdAt DateTime @default(now())
+
+  addresses      Address[]
+  customerOrders Order[]        @relation("CustomerOrders")
+  driverOrders   Order[]        @relation("DriverOrders")
+  driverProfile  DriverProfile?
+  conversations  ConversationSession[]
+}
+
+model Address {
+  id          String  @id @default(cuid())
+  userId      String
+  label       String
+  lat         Float
+  lng         Float
+  fullAddress String
+  notes       String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Restaurant {
+  id                String     @id @default(cuid())
+  ownerId           String?    // the RESTAURANT-role user who manages this
+  merchantType      MerchantType @default(RESTAURANT)
+  country           String     @default("AE")
+  currency          String     @default("AED")
+  name              String
+  description       String?
+  imageUrl          String?
+  lat               Float
+  lng               Float
+  address           String
+  cuisineType       String
+  rating            Float      @default(0)
+  deliveryFee       Float      @default(0)
+  estimatedPrepTime Int        @default(20)
+  isOpen            Boolean    @default(true)
+
+  menuItems MenuItem[]
+  orders    Order[]
+}
+
+model MenuItem {
+  id           String  @id @default(cuid())
+  restaurantId String
+  name         String
+  description  String?
+  price        Float
+  imageUrl     String?
+  category     String
+  isAvailable  Boolean @default(true)
+  options      Json?   // optional add-on groups: [{ group, required, choices:[{id,name,price}] }]
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id              String       @id @default(cuid())
+  jobType         JobType      @default(FOOD)
+  customerId      String
+  restaurantId    String?
+  currency        String       @default("AED")
+  country         String       @default("AE")
+  driverId        String?
+  status          OrderStatus  @default(PLACED)
+  items           Json
+  subtotal        Float
+  deliveryFee     Float        @default(0)
+  tip             Float        @default(0)
+  total           Float
+  deliveryAddress String
+  deliveryType    DeliveryType @default(DELIVERY)
+  // Unified pickup + drop-off so food, shop and parcel are all one job.
+  // For FOOD/SHOP the pickup is the merchant; for PARCEL it's the sender.
+  pickupLat       Float?
+  pickupLng       Float?
+  pickupAddress   String?
+  pickupContact   String?
+  dropoffLat      Float?
+  dropoffLng      Float?
+  dropoffContact  String?
+  // Parcel-specific
+  parcelSize      ParcelSize?
+  parcelNote      String?
+  proofPhotoKey   String?
+  proofPin        String?
+  driverArrived   Boolean      @default(false)
+  pickedUpAt      DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime     @default(now())
+
+  customer   User        @relation("CustomerOrders", fields: [customerId], references: [id])
+  driver     User?       @relation("DriverOrders", fields: [driverId], references: [id])
+  restaurant Restaurant? @relation(fields: [restaurantId], references: [id])
+  earning    Earning?
+  rating     Rating?
+}
+
+model Earning {
+  id         String   @id @default(cuid())
+  driverId   String
+  orderId    String   @unique
+  amount     Float    // delivery fee + tip to the driver
+  createdAt  DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Rating {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  customerId   String
+  restaurantId String
+  driverId     String?
+  foodRating   Int      // 1-5
+  driverRating Int?     // 1-5, null if pickup
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model DriverProfile {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  // KYC personal
+  fullName      String?
+  dateOfBirth   String?
+  // Vehicle
+  vehicleType   String?
+  vehicleMake   String?
+  vehicleModel  String?
+  vehicleColor  String?
+  licensePlate  String?
+  // Status
+  kycStatus     KycStatus @default(PENDING)
+  kycSubmittedAt DateTime?
+  kycReviewNote String?
+  isOnline      Boolean   @default(false)
+  currentLat    Float?
+  currentLng    Float?
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents DriverDocument[]
+}
+
+enum DocumentType {
+  DRIVERS_LICENSE
+  NATIONAL_ID
+  VEHICLE_PHOTO
+  PROFILE_PHOTO
+  INSURANCE
+}
+
+model DriverDocument {
+  id         String       @id @default(cuid())
+  profileId  String
+  type       DocumentType
+  fileUrl    String       // stored file location (local dev: /uploads/..)
+  status     KycStatus    @default(PENDING)
+  uploadedAt DateTime     @default(now())
+
+  profile DriverProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ConversationSession {
+  id           String  @id @default(cuid())
+  customerId   String
+  messages     Json    @default("[]")
+  resolvedCart Json?
+  status       String  @default("active")
+
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}

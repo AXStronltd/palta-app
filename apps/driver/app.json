@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Palta Driver",
+    "slug": "palta-driver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0B0B0F"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {},
+    "extra": {
+      "apiUrl": "https://palta-backend.onrender.com"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+# ============================================================
+# Palta — full stack in one command:  docker compose up
+# ============================================================
+# Brings up Postgres, Redis, and the API together. The API waits for
+# Postgres + Redis to be healthy, runs migrations, then starts.
+#
+# Copy .env.example to .env and fill secrets first. For local dev the
+# defaults below work out of the box.
+# ============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: palta
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-palta_dev}
+      POSTGRES_DB: palta
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U palta"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://palta:${POSTGRES_PASSWORD:-palta_dev}@postgres:5432/palta
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      ENABLED_COUNTRIES: ${ENABLED_COUNTRIES:-AE,US,GB}
+      DEFAULT_COUNTRY: ${DEFAULT_COUNTRY:-AE}
+    ports:
+      - "4000:4000"
+    # Run migrations then start the server. `migrate deploy` applies
+    # committed migrations (production-safe; no prompts).
+    command: sh -c "npx prisma migrate deploy && node src/index.js"
+
+volumes:
+  pgdata:

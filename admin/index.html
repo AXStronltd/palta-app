@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Palta Ops</title>
+<style>
+  :root {
+    --bg: #0E0F0C; --surface: #16181350; --surface2: #1A1C16; --line: #33362C;
+    --text: #F5F6F0; --dim: #9DA090; --accent: #9FE870; --danger: #F87171; --warn: #FBBF24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px; }
+  .logo { font-size: 30px; font-weight: 800; color: var(--accent); letter-spacing: -1px; }
+  .tag { color: var(--dim); font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+  .login { max-width: 380px; margin: 80px auto; }
+  .login h2 { margin-bottom: 16px; }
+  input { width: 100%; background: var(--surface2); border: 1px solid var(--line); color: var(--text);
+    padding: 13px 14px; border-radius: 12px; font-size: 15px; margin-bottom: 10px; }
+  button { background: var(--accent); color: #0E0F0C; border: none; padding: 13px 18px;
+    border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  button.small { padding: 8px 14px; font-size: 13px; }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat { background: var(--surface2); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .stat .n { font-size: 28px; font-weight: 800; color: var(--accent); }
+  .stat .l { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab { background: var(--surface2); border: 1px solid var(--line); color: var(--text);
+    padding: 9px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; }
+  .tab.on { background: var(--accent); color: #0E0F0C; font-weight: 700; }
+  .card { background: var(--surface2); border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px; margin-bottom: 12px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .muted { color: var(--dim); font-size: 13px; }
+  .docs { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+  .docs img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+  .actions { display: flex; gap: 8px; }
+  .pill { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+  .pill.PENDING { background: #3a3418; color: var(--warn); }
+  .pill.APPROVED { background: #1f3320; color: var(--accent); }
+  .pill.REJECTED { background: #3a1e1e; color: var(--danger); }
+  .empty { color: var(--dim); text-align: center; padding: 40px; }
+  .err { color: var(--danger); font-size: 14px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"></div>
+</div>
+
+<script>
+const API = localStorage.getItem("palta_api") || "http://localhost:4000";
+let token = localStorage.getItem("palta_admin_token") || null;
+let tab = "drivers";
+
+const app = document.getElementById("app");
+
+// Per-order currency formatting (admin sees orders across countries).
+const CURRENCY_META = {
+  AED: { symbol: "د.إ", locale: "en-AE" }, USD: { symbol: "$", locale: "en-US" },
+  GBP: { symbol: "£", locale: "en-GB" }, INR: { symbol: "₹", locale: "en-IN" },
+  EGP: { symbol: "E£", locale: "ar-EG" }, EUR: { symbol: "€", locale: "en-IE" },
+};
+function fmtMoney(amount, currency) {
+  const code = (currency || "AED").toUpperCase();
+  const meta = CURRENCY_META[code];
+  const n = Number(amount) || 0;
+  if (meta) {
+    try { return new Intl.NumberFormat(meta.locale, { style: "currency", currency: code }).format(n); }
+    catch { return `${meta.symbol}${n.toFixed(2)}`; }
+  }
+  return `${n.toFixed(2)} ${code}`;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(opts.headers || {}) },
+  });
+  if (!res.ok) throw await res.json().catch(() => ({ error: res.statusText }));
+  return res.json();
+}
+
+// ---- Login ----
+function renderLogin(err) {
+  app.innerHTML = `
+    <div class="login">
+      <div class="logo">Palta</div>
+      <div class="tag" style="margin-bottom:24px">Ops Console</div>
+      <h2>Admin sign in</h2>
+      <input id="phone" placeholder="Admin phone" />
+      <input id="code" placeholder="OTP code" />
+      <button onclick="doLogin()" style="width:100%">Sign in</button>
+      ${err ? `<div class="err">${err}</div>` : ""}
+      <p class="muted" style="margin-top:16px">Request an OTP first: an admin user must exist (role ADMIN). Use the seed's admin or promote a user in the DB.</p>
+      <button class="ghost small" style="margin-top:8px" onclick="requestOtp()">Send OTP</button>
+    </div>`;
+}
+
+async function requestOtp() {
+  const phone = document.getElementById("phone").value;
+  try {
+    const r = await api("/auth/request-otp", { method: "POST", body: JSON.stringify({ phone }) });
+    if (r.devCode) document.getElementById("code").value = r.devCode;
+  } catch (e) { renderLogin(e.error); }
+}
+
+async function doLogin() {
+  const phone = document.getElementById("phone").value;
+  const code = document.getElementById("code").value;
+  try {
+    const r = await api("/auth/verify", { method: "POST", body: JSON.stringify({ phone, code }) });
+    if (r.user.role !== "ADMIN") { renderLogin("That account isn't an admin."); return; }
+    token = r.token;
+    localStorage.setItem("palta_admin_token", token);
+    renderDashboard();
+  } catch (e) { renderLogin(e.error || "Login failed"); }
+}
+
+// ---- Dashboard ----
+async function renderDashboard() {
+  app.innerHTML = `
+    <header><div class="logo">Palta</div><div class="tag">Ops Console</div>
+      <button class="ghost small" style="margin-left:auto" onclick="logout()">Log out</button>
+    </header>
+    <div class="stats" id="stats"></div>
+    <div class="tabs">
+      <div class="tab ${tab==='drivers'?'on':''}" onclick="setTab('drivers')">Pending drivers</div>
+      <div class="tab ${tab==='orders'?'on':''}" onclick="setTab('orders')">Orders</div>
+    </div>
+    <div id="content"></div>`;
+  loadStats();
+  loadContent();
+}
+
+function setTab(t) { tab = t; renderDashboard(); }
+function logout() { token = null; localStorage.removeItem("palta_admin_token"); renderLogin(); }
+
+async function loadStats() {
+  try {
+    const s = await api("/admin/stats");
+    document.getElementById("stats").innerHTML = [
+      ["Customers", s.customers], ["Approved drivers", s.approvedDrivers],
+      ["Pending KYC", s.pendingKyc], ["Orders today", s.ordersToday], ["Active orders", s.activeOrders],
+    ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  } catch (e) { if (e.error?.includes("Admin")) logout(); }
+}
+
+async function loadContent() {
+  const el = document.getElementById("content");
+  if (tab === "drivers") {
+    const { drivers } = await api("/admin/drivers?status=PENDING");
+    if (!drivers.length) { el.innerHTML = `<div class="empty">No drivers awaiting review.</div>`; return; }
+    el.innerHTML = drivers.map(d => `
+      <div class="card">
+        <div class="row">
+          <div>
+            <strong>${d.fullName || d.user?.name || "Driver"}</strong>
+            <div class="muted">${d.user?.phone || ""} · ${d.vehicleType || "?"} ${d.vehicleMake || ""} ${d.vehicleModel || ""} · ${d.licensePlate || ""}</div>
+          </div>
+          <span class="pill ${d.kycStatus}">${d.kycStatus}</span>
+        </div>
+        <div class="docs">
+          ${(d.documents || []).map(doc => `<img src="${API}${doc.fileUrl}" alt="${doc.type}" title="${doc.type}" />`).join("") || '<span class="muted">No documents</span>'}
+        </div>
+        <div class="actions">
+          <button class="small" onclick="review('${d.userId}','APPROVED')">Approve</button>
+          <button class="danger small" onclick="review('${d.userId}','REJECTED')">Reject</button>
+        </div>
+      </div>`).join("");
+  } else {
+    const { orders } = await api("/admin/orders");
+    if (!orders.length) { el.innerHTML = `<div class="empty">No orders yet.</div>`; return; }
+    el.innerHTML = orders.map(o => `
+      <div class="card">
+        <div class="row">
+          <div>
+            <strong>#${o.id.slice(-6).toUpperCase()}</strong> · ${o.restaurant?.name || ""}
+            <div class="muted">${o.customer?.name || "Customer"} · ${fmtMoney(o.total, o.currency)} · ${o.driver?.name ? "Driver: " + o.driver.name : "No driver"}</div>
+          </div>
+          <span class="pill ${["DELIVERED"].includes(o.status)?"APPROVED":["CANCELLED","REJECTED"].includes(o.status)?"REJECTED":"PENDING"}">${o.status}</span>
+        </div>
+      </div>`).join("");
+  }
+}
+
+async function review(userId, decision) {
+  try {
+    await api(`/admin/drivers/${userId}/review`, { method: "POST", body: JSON.stringify({ decision }) });
+    loadStats(); loadContent();
+  } catch (e) { alert(e.error || "Failed"); }
+}
+
+// Boot
+if (token) renderDashboard(); else renderLogin();
+</script>
+</body>
+</html>
