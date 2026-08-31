@@ -1,40 +1,68 @@
-// Auth routes — phone-based OTP login.
-//
-// DAY 2 NOTE: OTP is faked for development. request-otp returns the
-// code directly in the response and logs it, so you can test without
-// an SMS provider. On the day you pick a country + SMS gateway
-// (Twilio, or a local provider), swap sendOtp() to actually send.
+// ============================================================
+// Palta Authentication Routes
+// Phone + OTP authentication
+// ============================================================
 
 const express = require("express");
 const { z } = require("zod");
+
 const { prisma } = require("../prisma");
-const { signToken } = require("../middleware/auth");
+const { signToken, requireAuth } = require("../middleware/auth");
+const { getStore } = require("../services/kv");
+const { rateLimit } = require("../middleware/rateLimit");
 
 const router = express.Router();
 
-// OTP store — now backed by the KV store (Redis in prod, memory in dev),
-// so codes survive restarts and are shared across server instances.
-const { getStore } = require("../services/kv");
 const kv = getStore();
 
-const OTP_TTL_SECONDS = 5 * 60; // 5 minutes
+const OTP_TTL_SECONDS = 5 * 60;
+
 const otpKey = (phone) => `otp:${phone}`;
 
+// ============================================================
+// OTP GENERATION
+// ============================================================
+
 function generateOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+  return String(
+    Math.floor(100000 + Math.random() * 900000)
+  );
 }
 
+// ============================================================
+// SMS
+// ============================================================
+//
+// In development, if the SMS resolver is unavailable,
+// the OTP is logged instead of crashing the request.
+//
+// In production, connect your real SMS provider here.
+// ============================================================
+
 async function sendOtp(phone, code, country) {
-  // Route through the country's SMS provider (mock in dev — logs instead
-  // of sending, and the code is still returned as devCode below).
   try {
     const { smsFor } = require("../config/resolver");
-    const sms = smsFor(country);
-    await sms.send({ to: phone, body: `Your Palta code is ${code}` });
+
+    const sms = smsFor(
+      country ? country.toUpperCase() : "AE"
+    );
+
+    await sms.send({
+      to: phone,
+      body: `Your Palta verification code is ${code}`,
+    });
+
+    console.log(`[OTP] SMS sent to ${phone}`);
   } catch (err) {
-    console.log(`[OTP fallback] ${phone} -> ${code} (${err.message})`);
+    console.log(
+      `[OTP fallback] ${phone} -> ${code} (${err.message})`
+    );
   }
 }
+
+// ============================================================
+// VALIDATION
+// ============================================================
 
 const phoneSchema = z.object({
   phone: z.string().min(6).max(20),
@@ -43,85 +71,326 @@ const phoneSchema = z.object({
 
 const verifySchema = z.object({
   phone: z.string().min(6).max(20),
+
   code: z.string().length(6),
+
   name: z.string().min(1).max(80).optional(),
+
   country: z.string().length(2).optional(),
-  // DEV: role is self-selected at signup for convenience. In PRODUCTION,
-  // only CUSTOMER/DRIVER should be self-assignable; RESTAURANT and ADMIN
-  // must be granted by an existing admin (the seed pre-creates them).
-  role: z.enum(["CUSTOMER", "DRIVER", "RESTAURANT", "ADMIN"]).optional(),
+
+  role: z
+    .enum([
+      "CUSTOMER",
+      "DRIVER",
+      "RESTAURANT",
+      "ADMIN",
+    ])
+    .optional(),
 });
 
-// POST /auth/request-otp  { phone }
-const { rateLimit } = require("../middleware/rateLimit");
+// ============================================================
+// RATE LIMITING
+// ============================================================
 
-// Limit OTP requests: max 5 per phone per 10 min (stops SMS-bombing a number)
+// Maximum 5 OTP requests per phone every 10 minutes.
 const otpRequestLimit = rateLimit({
-  windowSeconds: 600, max: 5, keyPrefix: "otp-req",
-  keyFn: (req) => (req.body?.phone || "nophone"),
-});
-// Limit verify attempts: max 10 per IP per 10 min (stops code brute-force)
-const verifyLimit = rateLimit({ windowSeconds: 600, max: 10, keyPrefix: "otp-verify" });
+  windowSeconds: 600,
+  max: 5,
+  keyPrefix: "otp-req",
 
-router.post("/request-otp", otpRequestLimit, async (req, res) => {
-  const parsed = phoneSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Valid phone required" });
-
-  const { phone, country } = parsed.data;
-  const code = generateOtp();
-  await kv.set(otpKey(phone), code, OTP_TTL_SECONDS);
-  await sendOtp(phone, code, country);
-
-  // DEV convenience: return the code so the app can auto-fill.
-  // REMOVE `devCode` before production.
-  res.json({ sent: true, devCode: code });
+  keyFn: (req) =>
+    String(req.body?.phone || "nophone"),
 });
 
-// POST /auth/verify  { phone, code, name?, role? }
-router.post("/verify", verifyLimit, async (req, res) => {
-  const parsed = verifySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "phone and 6-digit code required" });
+// Maximum 10 verification attempts per IP every 10 minutes.
+const verifyLimit = rateLimit({
+  windowSeconds: 600,
+  max: 10,
+  keyPrefix: "otp-verify",
+});
 
-  const { phone, code, name, role, country } = parsed.data;
-  const storedCode = await kv.get(otpKey(phone));
+// ============================================================
+// POST /auth/request-otp
+// ============================================================
 
-  // A missing code means never-requested OR expired (KV TTL removes it).
-  if (!storedCode) {
-    return res.status(401).json({ error: "Code expired or not found, request a new one" });
+router.post(
+  "/request-otp",
+  otpRequestLimit,
+  async (req, res) => {
+    const parsed = phoneSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Valid phone required",
+      });
+    }
+
+    try {
+      const {
+        phone,
+        country,
+      } = parsed.data;
+
+      const code = generateOtp();
+
+      // Store OTP for 5 minutes.
+      await kv.set(
+        otpKey(phone),
+        code,
+        OTP_TTL_SECONDS
+      );
+
+      // Send SMS.
+      await sendOtp(
+        phone,
+        code,
+        country
+      );
+
+      // --------------------------------------------------------
+      // DEVELOPMENT ONLY
+      // Remove devCode before production.
+      // --------------------------------------------------------
+
+      const response = {
+        sent: true,
+      };
+
+      if (
+        process.env.NODE_ENV !== "production"
+      ) {
+        response.devCode = code;
+      }
+
+      return res.json(response);
+    } catch (err) {
+      console.error(
+        "[/auth/request-otp]",
+        err
+      );
+
+      return res.status(500).json({
+        error: "Unable to send verification code",
+      });
+    }
   }
-  if (String(storedCode) !== code) {
-    return res.status(401).json({ error: "Incorrect code" });
+);
+
+// ============================================================
+// POST /auth/verify
+// ============================================================
+
+router.post(
+  "/verify",
+  verifyLimit,
+  async (req, res) => {
+    const parsed = verifySchema.safeParse(
+      req.body
+    );
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        error:
+          "phone and 6-digit code required",
+      });
+    }
+
+    try {
+      const {
+        phone,
+        code,
+        name,
+        role,
+        country,
+      } = parsed.data;
+
+      // --------------------------------------------------------
+      // Retrieve OTP
+      // --------------------------------------------------------
+
+      const storedCode = await kv.get(
+        otpKey(phone)
+      );
+
+      if (!storedCode) {
+        return res.status(401).json({
+          error:
+            "Code expired or not found, request a new one",
+        });
+      }
+
+      if (
+        String(storedCode) !==
+        String(code)
+      ) {
+        return res.status(401).json({
+          error: "Incorrect code",
+        });
+      }
+
+      // --------------------------------------------------------
+      // One-time use
+      // --------------------------------------------------------
+
+      await kv.del(otpKey(phone));
+
+      // --------------------------------------------------------
+      // Find existing user
+      // --------------------------------------------------------
+
+      let user =
+        await prisma.user.findUnique({
+          where: {
+            phone,
+          },
+        });
+
+      let isNew = false;
+
+      // --------------------------------------------------------
+      // Create user
+      // --------------------------------------------------------
+
+      if (!user) {
+        user =
+          await prisma.user.create({
+            data: {
+              phone,
+
+              name:
+                name ||
+                null,
+
+              role:
+                role ||
+                "CUSTOMER",
+
+              country:
+                (
+                  country ||
+                  "AE"
+                ).toUpperCase(),
+            },
+          });
+
+        isNew = true;
+      }
+
+      // --------------------------------------------------------
+      // Create authentication token
+      // --------------------------------------------------------
+
+      const token = signToken({
+        userId: user.id,
+        role: user.role,
+        country: user.country,
+      });
+
+      return res.json({
+        token,
+        user,
+        isNew,
+      });
+    } catch (err) {
+      console.error(
+        "[/auth/verify]",
+        err
+      );
+
+      return res.status(500).json({
+        error: "Authentication failed",
+      });
+    }
   }
-  await kv.del(otpKey(phone)); // one-time use
+);
 
-  // Find or create the user.
-  let user = await prisma.user.findUnique({ where: { phone } });
-  let isNew = false;
-  if (!user) {
-    user = await prisma.user.create({
-      data: { phone, name: name || null, role: role || "CUSTOMER", country: (country || "AE").toUpperCase() },
-    });
-    isNew = true;
+// ============================================================
+// GET /auth/me
+// ============================================================
+
+router.get(
+  "/me",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const user =
+        await prisma.user.findUnique({
+          where: {
+            id: req.user.userId,
+          },
+        });
+
+      if (!user) {
+        return res.status(404).json({
+          error: "User not found",
+        });
+      }
+
+      return res.json({
+        user,
+      });
+    } catch (err) {
+      console.error(
+        "[/auth/me]",
+        err
+      );
+
+      return res.status(500).json({
+        error: "Unable to load user",
+      });
+    }
   }
+);
 
-  const token = signToken({ userId: user.id, role: user.role, country: user.country });
-  res.json({ token, user, isNew });
-});
+// ============================================================
+// POST /auth/push-token
+// ============================================================
 
-// GET /auth/me  (requires token) — handy for the app to restore session
-const { requireAuth } = require("../middleware/auth");
-router.get("/me", requireAuth, async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json({ user });
-});
+router.post(
+  "/push-token",
+  requireAuth,
+  async (req, res) => {
+    try {
+      const token =
+        req.body?.token
+          ?.toString()
+          .trim();
 
-// POST /auth/push-token  { token }  (register device for push)
-router.post("/push-token", requireAuth, async (req, res) => {
-  const token = (req.body?.token || "").toString();
-  if (!token) return res.status(400).json({ error: "token required" });
-  await prisma.user.update({ where: { id: req.user.userId }, data: { pushToken: token } });
-  res.json({ ok: true });
-});
+      if (!token) {
+        return res.status(400).json({
+          error: "token required",
+        });
+      }
+
+      await prisma.user.update({
+        where: {
+          id: req.user.userId,
+        },
+
+        data: {
+          pushToken: token,
+        },
+      });
+
+      return res.json({
+        ok: true,
+      });
+    } catch (err) {
+      console.error(
+        "[/auth/push-token]",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to register push token",
+      });
+    }
+  }
+);
+
+// ============================================================
+// EXPORT
+// ============================================================
 
 module.exports = router;
