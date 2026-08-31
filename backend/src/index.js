@@ -1,90 +1,176 @@
-// Palta backend entry point (Day 1).
-// Express API + Socket.IO realtime scaffold.
+// ============================================================
+// Palta Backend
+// Production entry point
+// ============================================================
 
 require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 
+// ============================================================
+// CURRENT ROUTES
+// These are the route files that currently exist in the repo.
+// ============================================================
+
 const healthRoutes = require("./routes/health");
 const aiRoutes = require("./routes/ai");
 const authRoutes = require("./routes/auth");
 const restaurantRoutes = require("./routes/restaurants");
-const addressRoutes = require("./routes/addresses");
 const geoRoutes = require("./routes/geo");
-const orderRoutes = require("./routes/orders");
-const parcelRoutes = require("./routes/parcels");
-const { router: driverRoutes } = require("./routes/driver");
-const opsRoutes = require("./routes/ops");
-const adminRoutes = require("./routes/admin");
-const restaurantOwnerRoutes = require("./routes/restaurant-owner");
 const configRoutes = require("./routes/config");
-const { UPLOAD_DIR } = require("./services/storage");
+
+// ============================================================
+// REALTIME
+// ============================================================
+
 const realtime = require("./realtime");
 
+// ============================================================
+// EXPRESS APP
+// ============================================================
+
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: "12mb" })); // base64 doc uploads
 
-const { requestContext } = require("./middleware/requestContext");
-app.use(requestContext);
+// ------------------------------------------------------------
+// CORS
+// ------------------------------------------------------------
 
-// Serve uploaded documents in dev (prod uses S3/R2 URLs directly).
-app.use("/uploads", express.static(UPLOAD_DIR));
+app.use(
+  cors({
+    origin: "*",
+    credentials: false,
+  })
+);
 
-// Routes
+// ------------------------------------------------------------
+// JSON BODY
+// ------------------------------------------------------------
+
+app.use(
+  express.json({
+    limit: "12mb",
+  })
+);
+
+// ============================================================
+// BASIC REQUEST LOGGING
+// ============================================================
+
+app.use((req, _res, next) => {
+  console.log(`[Palta] ${req.method} ${req.path}`);
+  next();
+});
+
+// ============================================================
+// ROUTES
+// ============================================================
+
+// Health
 app.use("/health", healthRoutes);
+
+// Authentication
 app.use("/auth", authRoutes);
+
+// Restaurants
 app.use("/restaurants", restaurantRoutes);
-app.use("/addresses", addressRoutes);
+
+// Geography
 app.use("/geo", geoRoutes);
-app.use("/orders", orderRoutes);
-app.use("/parcels", parcelRoutes);
-app.use("/driver", driverRoutes);
-app.use("/ops", opsRoutes);
-app.use("/admin", adminRoutes);
-app.use("/restaurant", restaurantOwnerRoutes);
+
+// Public configuration
 app.use("/config", configRoutes);
+
+// AI
 app.use("/ai", aiRoutes);
 
-// 404 for unmatched routes — consistent error envelope.
+// ============================================================
+// 404 HANDLER
+// ============================================================
+
 app.use((req, res) => {
-  res.status(404).json({ error: "Not found", path: req.path });
+  res.status(404).json({
+    error: "Not found",
+    path: req.path,
+  });
 });
 
-// Centralized error handler — catches thrown/async errors so nothing
-// leaks a stack trace to clients. Logs with the request id.
-const { logger } = require("./services/logger");
+// ============================================================
+// GLOBAL ERROR HANDLER
+// ============================================================
+
 app.use((err, req, res, _next) => {
-  logger.error(`Unhandled: ${err.message}`, { reqId: req.id, stack: err.stack });
-  if (res.headersSent) return;
-  res.status(err.status || 500).json({ error: "Something went wrong" });
+  console.error("[Palta] Unhandled error:", err);
+
+  if (res.headersSent) {
+    return;
+  }
+
+  res.status(err.status || 500).json({
+    error: "Something went wrong",
+  });
 });
 
-// HTTP + Socket.IO server
+// ============================================================
+// HTTP SERVER
+// ============================================================
+
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-realtime.init(io);
+
+// ============================================================
+// SOCKET.IO
+// ============================================================
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
+});
+
+// Initialize realtime safely
+try {
+  realtime.init(io);
+  console.log("[Palta] Realtime initialized");
+} catch (err) {
+  console.error(
+    "[Palta] Realtime initialization failed:",
+    err.message
+  );
+}
+
+// ============================================================
+// PORT
+// Render provides process.env.PORT automatically.
+// ============================================================
 
 const PORT = process.env.PORT || 4000;
+
+// ============================================================
+// START SERVER
+// ============================================================
+
 server.listen(PORT, () => {
-  console.log(`Palta backend running on http://localhost:${PORT}`);
-  console.log(`  GET  /health`);
-  console.log(`  POST /auth/request-otp`);
-  console.log(`  POST /auth/verify`);
-  console.log(`  GET  /restaurants`);
-  console.log(`  GET  /restaurants/:id`);
-  console.log(`  GET  /addresses`);
-  console.log(`  POST /addresses`);
-  console.log(`  GET  /geo/search`);
-  console.log(`  GET  /geo/reverse`);
-  console.log(`  POST /orders`);
-  console.log(`  GET  /orders`);
-  console.log(`  GET  /driver/me`);
-  console.log(`  POST /driver/submit`);
-  console.log(`  POST /driver/online`);
-  console.log(`  POST /driver/accept`);
-  console.log(`  POST /ops/advance`);
-  console.log(`  POST /ai/order`);
+  console.log("");
+  console.log("==========================================");
+  console.log("       PALTA BACKEND IS RUNNING");
+  console.log("==========================================");
+  console.log(`Port: ${PORT}`);
+  console.log("");
+  console.log("Routes:");
+  console.log("GET  /health");
+  console.log("GET  /health/ready");
+  console.log("POST /auth/request-otp");
+  console.log("POST /auth/verify");
+  console.log("GET  /restaurants");
+  console.log("GET  /restaurants/:id");
+  console.log("GET  /restaurants/cuisines");
+  console.log("GET  /geo/search");
+  console.log("GET  /geo/reverse");
+  console.log("GET  /config/countries");
+  console.log("POST /ai/ping");
+  console.log("POST /ai/order");
+  console.log("");
+  console.log("==========================================");
 });
