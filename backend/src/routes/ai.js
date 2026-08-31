@@ -1,75 +1,166 @@
-// AI routes. Day 1: a single /ai/ping that proves the LLM layer
-// is wired up correctly. Day 2 adds the conversational ordering
-// endpoint here.
+// ============================================================
+// Palta Backend Entry Point
+// Express API + Socket.IO realtime server
+// ============================================================
+
+require("dotenv").config();
 
 const express = require("express");
-const { z } = require("zod");
-const { complete } = require("../ai/client");
-const { runOrderingTurn } = require("../ai/ordering");
-const { requireAuth } = require("../middleware/auth");
+const cors = require("cors");
+const http = require("http");
+const { Server } = require("socket.io");
 
-const router = express.Router();
+// ------------------------------------------------------------
+// Routes that currently exist in backend/src/routes/
+// ------------------------------------------------------------
 
-const pingSchema = z.object({
-  message: z.string().min(1).max(500),
+const healthRoutes = require("./routes/health");
+const authRoutes = require("./routes/auth");
+const restaurantRoutes = require("./routes/restaurants");
+const geoRoutes = require("./routes/geo");
+const orderRoutes = require("./routes/orders");
+const aiRoutes = require("./routes/ai");
+const configRoutes = require("./routes/config");
+
+// ------------------------------------------------------------
+// Services / middleware
+// ------------------------------------------------------------
+
+const { UPLOAD_DIR } = require("./services/storage");
+const realtime = require("./realtime");
+
+// ------------------------------------------------------------
+// App
+// ------------------------------------------------------------
+
+const app = express();
+
+app.use(cors());
+
+app.use(
+  express.json({
+    limit: "12mb",
+  })
+);
+
+// ------------------------------------------------------------
+// Request context
+// ------------------------------------------------------------
+
+try {
+  const { requestContext } = require("./middleware/requestContext");
+
+  if (typeof requestContext === "function") {
+    app.use(requestContext);
+  }
+} catch (err) {
+  console.warn(
+    "[startup] requestContext middleware not loaded:",
+    err.message
+  );
+}
+
+// ------------------------------------------------------------
+// Uploaded files
+// ------------------------------------------------------------
+
+if (UPLOAD_DIR) {
+  app.use("/uploads", express.static(UPLOAD_DIR));
+}
+
+// ------------------------------------------------------------
+// Routes
+// ------------------------------------------------------------
+
+app.use("/health", healthRoutes);
+
+app.use("/auth", authRoutes);
+
+app.use("/restaurants", restaurantRoutes);
+
+app.use("/geo", geoRoutes);
+
+app.use("/orders", orderRoutes);
+
+app.use("/ai", aiRoutes);
+
+app.use("/config", configRoutes);
+
+// ------------------------------------------------------------
+// 404 handler
+// ------------------------------------------------------------
+
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Not found",
+    path: req.path,
+  });
 });
 
-// POST /ai/ping  { message } -> real LLM reply
-router.post("/ping", async (req, res) => {
-  const parsed = pingSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "message is required" });
+// ------------------------------------------------------------
+// Central error handler
+// ------------------------------------------------------------
+
+app.use((err, req, res, next) => {
+  console.error("[Unhandled Error]", {
+    message: err.message,
+    stack: err.stack,
+    requestId: req.id,
+  });
+
+  if (res.headersSent) {
+    return next(err);
   }
 
-  try {
-    const reply = await complete({
-      system:
-        "You are Palta's assistant, a friendly food-delivery helper. Keep replies to one short sentence.",
-      messages: [{ role: "user", content: parsed.data.message }],
-      maxTokens: 100,
-    });
-    res.json({ reply });
-  } catch (err) {
-    console.error("[/ai/ping] error:", err.message);
-    res.status(500).json({ error: "AI layer failed", detail: err.message });
-  }
+  res.status(err.status || 500).json({
+    error: "Something went wrong",
+  });
 });
 
-// POST /ai/order — one turn of conversational ordering.
-// body: { restaurantId, message, history? }
-// returns: { reply, cart, subtotal }
-const orderSchema = z.object({
-  restaurantId: z.string().min(1),
-  message: z.string().min(1).max(500),
-  history: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        content: z.string(),
-      })
-    )
-    .optional()
-    .default([]),
+// ------------------------------------------------------------
+// HTTP + Socket.IO
+// ------------------------------------------------------------
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  },
 });
 
-router.post("/order", requireAuth, async (req, res) => {
-  const parsed = orderSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "restaurantId and message are required" });
-  }
+// Initialize realtime functionality
+if (realtime && typeof realtime.init === "function") {
+  realtime.init(io);
+}
 
-  try {
-    const { restaurantId, message, history } = parsed.data;
-    const result = await runOrderingTurn({
-      restaurantId,
-      history,
-      userMessage: message,
-    });
-    res.json(result);
-  } catch (err) {
-    console.error("[/ai/order] error:", err.message);
-    res.status(500).json({ error: "Ordering failed", detail: err.message });
-  }
+// ------------------------------------------------------------
+// Port
+// ------------------------------------------------------------
+
+const PORT = Number(process.env.PORT) || 4000;
+
+// ------------------------------------------------------------
+// Start server
+// ------------------------------------------------------------
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("==============================================");
+  console.log("Palta backend started");
+  console.log(`Port: ${PORT}`);
+  console.log("==============================================");
+
+  console.log("GET  /health");
+  console.log("POST /auth/request-otp");
+  console.log("POST /auth/verify");
+  console.log("GET  /restaurants");
+  console.log("GET  /restaurants/:id");
+  console.log("GET  /geo/search");
+  console.log("GET  /geo/reverse");
+  console.log("POST /orders");
+  console.log("GET  /orders");
+  console.log("POST /ai/ping");
+  console.log("POST /ai/order");
+  console.log("GET  /config");
 });
-
-module.exports = router;
