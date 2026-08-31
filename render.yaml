@@ -1,0 +1,74 @@
+# ============================================================
+# Palta — Render deployment blueprint
+# ============================================================
+# One file that provisions the whole backend on Render:
+#   - the Node/Express API (Docker), auto-deployed from GitHub
+#   - a managed PostgreSQL database
+#   - a managed Redis instance (for realtime + rate limiting)
+#
+# HOW TO USE (once, ~5 minutes):
+#   1. Push this repo to GitHub (see DEPLOY_TO_GITHUB.md).
+#   2. Go to https://render.com → New → Blueprint.
+#   3. Connect your GitHub repo. Render reads THIS file and
+#      creates all three services automatically.
+#   4. Set the secret env vars it asks for (payment/SMS keys).
+#   5. Every push to `main` now auto-deploys the backend. Done.
+# ============================================================
+
+databases:
+  - name: palta-postgres
+    databaseName: palta
+    user: palta
+    plan: free            # upgrade to "starter" for production traffic
+
+services:
+  # ---- Redis (realtime pub/sub + rate limiting) ----
+  - type: redis
+    name: palta-redis
+    plan: free            # upgrade for production
+    ipAllowList: []        # only reachable inside Render's private network
+    maxmemoryPolicy: noeviction
+
+  # ---- Backend API ----
+  - type: web
+    name: palta-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free            # upgrade to "starter"/"standard" for production
+    region: frankfurt      # closest Render region to Kenya; change if needed
+    healthCheckPath: /health
+    autoDeploy: true       # deploy on every push to the connected branch
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # Wire the database + redis automatically from the services above
+      - key: DATABASE_URL
+        fromDatabase:
+          name: palta-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: palta-redis
+          property: connectionString
+      # Secrets — Render will PROMPT you to fill these in the dashboard.
+      # Never commit real values; they stay in Render, not in git.
+      - key: JWT_SECRET
+        generateValue: true          # Render generates a strong secret
+      - key: ANTHROPIC_API_KEY
+        sync: false                  # you paste this in the dashboard
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: AFRICASTALKING_API_KEY
+        sync: false
+      - key: AFRICASTALKING_USERNAME
+        sync: false
