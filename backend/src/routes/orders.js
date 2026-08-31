@@ -1,990 +1,264 @@
-// ============================================================
-// Palta Order Routes
-// ============================================================
-// Place an order, list orders, view an order, cancel, rate,
-// receipt, and reorder.
-//
-// IMPORTANT:
-// Real payment providers are NOT required at this stage.
-// Card payments use MOCK/PENDING mode until a real provider
-// is connected.
-// ============================================================
+// Order routes — place an order, list your orders, get one, cancel.
 
 const express = require("express");
 const { z } = require("zod");
-
 const { prisma } = require("../prisma");
 const { requireAuth } = require("../middleware/auth");
+const { createOrder, transition } = require("../services/order");
+const { provider } = require("../services/payment");
 
 const router = express.Router();
-
 router.use(requireAuth);
 
-// ============================================================
-// VALIDATION
-// ============================================================
-
 const lineSchema = z.object({
-  menuItemId: z.string().min(1),
-
-  quantity: z
-    .number()
-    .int()
-    .min(1)
-    .max(20),
-
-  options: z
-    .array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        price: z.number(),
-      })
-    )
-    .optional()
-    .default([]),
-
-  notes: z
-    .string()
-    .max(200)
-    .optional()
-    .default(""),
+  menuItemId: z.string(),
+  quantity: z.number().int().min(1).max(20),
+  options: z.array(z.object({ id: z.string(), name: z.string(), price: z.number() })).optional(),
+  notes: z.string().max(200).optional(),
 });
 
 const placeSchema = z.object({
   restaurantId: z.string().min(1),
-
-  lines: z
-    .array(lineSchema)
-    .min(1),
-
-  tip: z
-    .number()
-    .min(0)
-    .optional()
-    .default(0),
-
-  deliveryAddress: z
-    .string()
-    .max(300)
-    .optional()
-    .default(""),
-
-  deliveryType: z
-    .enum(["DELIVERY", "PICKUP"])
-    .optional()
-    .default("DELIVERY"),
-
-  paymentMethod: z
-    .enum(["card", "cash"])
-    .optional()
-    .default("card"),
-
-  currency: z
-    .string()
-    .length(3)
-    .optional()
-    .default("AED"),
+  lines: z.array(lineSchema).min(1),
+  tip: z.number().min(0).optional().default(0),
+  deliveryAddress: z.string().max(300).optional().default(""),
+  deliveryType: z.enum(["DELIVERY", "PICKUP"]).optional().default("DELIVERY"),
+  paymentMethod: z.enum(["card", "cash"]).optional().default("card"),
+  currency: z.string().length(3).optional().default("usd"),
 });
 
-const ratingSchema = z.object({
-  foodRating: z
-    .number()
-    .int()
-    .min(1)
-    .max(5),
-
-  driverRating: z
-    .number()
-    .int()
-    .min(1)
-    .max(5)
-    .optional(),
-
-  comment: z
-    .string()
-    .max(500)
-    .optional(),
-});
-
-// ============================================================
-// POST /orders
-// Place an order
-// ============================================================
-
+// POST /orders — place an order
 router.post("/", async (req, res) => {
   const parsed = placeSchema.safeParse(req.body);
-
   if (!parsed.success) {
-    return res.status(400).json({
-      error: "Invalid order",
-      detail: parsed.error.issues,
+    return res.status(400).json({ error: "Invalid order", detail: parsed.error.issues });
+  }
+  const { restaurantId, lines, tip, deliveryAddress, deliveryType, paymentMethod } = parsed.data;
+
+  try {
+    // Resolve the merchant's country → currency + the right payment provider.
+    const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+    if (!restaurant) return res.status(404).json({ error: "Restaurant not found" });
+    const countryCode = restaurant.country || "AE";
+    const orderCurrency = restaurant.currency || "AED";
+
+    // 1. Create the order (server recomputes all prices), stamped with country/currency.
+    const order = await createOrder({
+      customerId: req.user.userId,
+      restaurantId,
+      lines,
+      tip,
+      deliveryAddress,
+      deliveryType,
+      currency: orderCurrency,
+      country: countryCode,
+    });
+
+    // 2. Payment — provider chosen by the merchant's country.
+    let payment;
+    if (paymentMethod === "cash") {
+      payment = { provider: "cash", clientSecret: null, paymentIntentId: null, mock: false };
+    } else {
+      const { paymentFor } = require("../config/resolver");
+      const paymentProvider = paymentFor(countryCode);
+      payment = await paymentProvider.createPaymentIntent({
+        amount: order.total,
+        currency: orderCurrency,
+        orderId: order.id,
+      });
+    }
+
+    // Notify the restaurant owner (if linked) of the new incoming order.
+    if (restaurant.ownerId) {
+      const { emitToUser } = require("../realtime");
+      emitToUser(restaurant.ownerId, "order:new", { orderId: order.id });
+    }
+
+    // 3. Return the order + how to complete payment (clientSecret for card).
+    res.status(201).json({ order, payment });
+  } catch (err) {
+    console.error("[POST /orders]", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /orders — the customer's orders, newest first
+router.get("/", async (req, res) => {
+  const orders = await prisma.order.findMany({
+    where: { customerId: req.user.userId },
+    orderBy: { createdAt: "desc" },
+    include: { restaurant: { select: { name: true, cuisineType: true } } },
+  });
+  res.json({ orders });
+});
+
+// GET /orders/:id — one order (must belong to the customer), enriched
+// with driver details + live location once a driver is assigned.
+router.get("/:id", async (req, res) => {
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: {
+      restaurant: { select: { name: true, address: true, lat: true, lng: true } },
+      driver: { select: { id: true, name: true } },
+    },
+  });
+  if (!order || order.customerId !== req.user.userId) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  // Attach driver profile (vehicle, plate, live location) if assigned.
+  let driverProfile = null;
+  if (order.driverId) {
+    driverProfile = await prisma.driverProfile.findUnique({
+      where: { userId: order.driverId },
+      select: { vehicleType: true, vehicleMake: true, vehicleModel: true, vehicleColor: true, licensePlate: true, currentLat: true, currentLng: true },
     });
   }
 
-  const {
-    restaurantId,
-    lines,
-    tip,
-    deliveryAddress,
-    deliveryType,
-    paymentMethod,
-  } = parsed.data;
+  res.json({ order: { ...order, driverProfile } });
+});
 
+// POST /orders/:id/cancel — customer cancels (only while cancellable)
+router.post("/:id/cancel", async (req, res) => {
+  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+  if (!order || order.customerId !== req.user.userId) {
+    return res.status(404).json({ error: "Order not found" });
+  }
   try {
-    // --------------------------------------------------------
-    // Find restaurant
-    // --------------------------------------------------------
-
-    const restaurant =
-      await prisma.restaurant.findUnique({
-        where: {
-          id: restaurantId,
-        },
-      });
-
-    if (!restaurant) {
-      return res.status(404).json({
-        error: "Restaurant not found",
-      });
+    const updated = await transition(order.id, "CANCELLED");
+    res.json({ order: updated });
+  } catch (err) {
+    if (err.code === "ILLEGAL_TRANSITION") {
+      return res.status(409).json({ error: "This order can no longer be cancelled" });
     }
+    throw err;
+  }
+});
 
-    // --------------------------------------------------------
-    // Validate restaurant availability
-    // --------------------------------------------------------
+// --- Day 12: ratings, receipts, reorder ---
 
-    if (
-      restaurant.isOpen === false
-    ) {
-      return res.status(409).json({
-        error:
-          "This restaurant is currently closed",
-      });
-    }
+const ratingSchema = z.object({
+  foodRating: z.number().int().min(1).max(5),
+  driverRating: z.number().int().min(1).max(5).optional(),
+  comment: z.string().max(500).optional(),
+});
 
-    // --------------------------------------------------------
-    // Load requested menu items
-    // --------------------------------------------------------
+// POST /orders/:id/rate — rate a delivered order (once)
+router.post("/:id/rate", async (req, res) => {
+  const parsed = ratingSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "foodRating (1-5) required" });
 
-    const menuItemIds = [
-      ...new Set(
-        lines.map(
-          (line) => line.menuItemId
-        )
-      ),
-    ];
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { rating: true },
+  });
+  if (!order || order.customerId !== req.user.userId) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+  if (order.status !== "DELIVERED") {
+    return res.status(409).json({ error: "You can only rate a delivered order" });
+  }
+  if (order.rating) {
+    return res.status(409).json({ error: "You've already rated this order" });
+  }
 
-    const menuItems =
-      await prisma.menuItem.findMany({
-        where: {
-          id: {
-            in: menuItemIds,
-          },
+  const rating = await prisma.rating.create({
+    data: {
+      orderId: order.id,
+      customerId: req.user.userId,
+      restaurantId: order.restaurantId,
+      driverId: order.driverId,
+      foodRating: parsed.data.foodRating,
+      driverRating: parsed.data.driverRating ?? null,
+      comment: parsed.data.comment || null,
+    },
+  });
 
-          restaurantId,
-        },
-      });
+  // Update the restaurant's rolling average.
+  const agg = await prisma.rating.aggregate({
+    where: { restaurantId: order.restaurantId },
+    _avg: { foodRating: true },
+  });
+  if (agg._avg.foodRating != null) {
+    await prisma.restaurant.update({
+      where: { id: order.restaurantId },
+      data: { rating: Number(agg._avg.foodRating.toFixed(1)) },
+    });
+  }
 
-    const menuById = new Map(
-      menuItems.map((item) => [
-        item.id,
-        item,
-      ])
-    );
+  res.status(201).json({ rating });
+});
 
-    // --------------------------------------------------------
-    // Validate every item and calculate prices SERVER-SIDE
-    // --------------------------------------------------------
+// GET /orders/:id/receipt — a structured receipt
+router.get("/:id/receipt", async (req, res) => {
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { restaurant: { select: { name: true, address: true } } },
+  });
+  if (!order || order.customerId !== req.user.userId) {
+    return res.status(404).json({ error: "Order not found" });
+  }
 
-    const verifiedItems = [];
+  res.json({
+    receipt: {
+      orderId: order.id,
+      shortId: order.id.slice(-6).toUpperCase(),
+      currency: order.currency,
+      restaurant: order.restaurant?.name,
+      restaurantAddress: order.restaurant?.address,
+      placedAt: order.createdAt,
+      deliveredAt: order.deliveredAt,
+      deliveryType: order.deliveryType,
+      deliveryAddress: order.deliveryAddress,
+      items: order.items,
+      subtotal: order.subtotal,
+      deliveryFee: order.deliveryFee,
+      tip: order.tip,
+      total: order.total,
+      status: order.status,
+    },
+  });
+});
 
-    let subtotal = 0;
+// GET /orders/:id/reorder — returns cart-ready lines from a past order,
+// re-validated against the current menu (prices/availability may have changed).
+router.get("/:id/reorder", async (req, res) => {
+  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+  if (!order || order.customerId !== req.user.userId) {
+    return res.status(404).json({ error: "Order not found" });
+  }
 
-    for (const line of lines) {
-      const item =
-        menuById.get(
-          line.menuItemId
-        );
+  const restaurant = await prisma.restaurant.findUnique({ where: { id: order.restaurantId } });
+  if (!restaurant || !restaurant.isOpen) {
+    return res.status(409).json({ error: "This restaurant isn't available right now" });
+  }
 
-      if (!item) {
-        return res.status(400).json({
-          error:
-            `Menu item not found: ${line.menuItemId}`,
-        });
-      }
+  const menuItems = await prisma.menuItem.findMany({ where: { restaurantId: order.restaurantId } });
+  const byId = new Map(menuItems.map((m) => [m.id, m]));
 
-      if (
-        item.isAvailable === false
-      ) {
-        return res.status(409).json({
-          error:
-            `${item.name} is currently unavailable`,
-        });
-      }
-
-      const unitPrice =
-        Number(item.price);
-
-      const lineTotal =
-        unitPrice *
-        line.quantity;
-
-      subtotal += lineTotal;
-
-      verifiedItems.push({
+  const lines = [];
+  const unavailable = [];
+  for (const it of order.items) {
+    const item = byId.get(it.menuItemId);
+    if (item && item.isAvailable) {
+      lines.push({
         menuItemId: item.id,
         name: item.name,
-        price: unitPrice,
-        quantity: line.quantity,
-        options:
-          line.options || [],
-        notes:
-          line.notes || "",
+        price: item.price, // current price
+        quantity: it.quantity,
+        options: it.options || [],
+        notes: it.notes || "",
       });
+    } else {
+      unavailable.push(it.name);
     }
-
-    // --------------------------------------------------------
-    // Delivery fee
-    // --------------------------------------------------------
-
-    const deliveryFee =
-      deliveryType === "PICKUP"
-        ? 0
-        : Number(
-            restaurant.deliveryFee || 0
-          );
-
-    // --------------------------------------------------------
-    // Total
-    // --------------------------------------------------------
-
-    const total =
-      subtotal +
-      deliveryFee +
-      Number(tip || 0);
-
-    // --------------------------------------------------------
-    // Currency / country
-    // --------------------------------------------------------
-
-    const country =
-      restaurant.country || "AE";
-
-    const currency =
-      restaurant.currency ||
-      "AED";
-
-    // --------------------------------------------------------
-    // Create order
-    //
-    // NOTE:
-    // We intentionally use the existing Prisma Order model
-    // through a small data payload. No external order service
-    // is required.
-    // --------------------------------------------------------
-
-    const orderData = {
-      customerId:
-        req.user.userId,
-
-      restaurantId,
-
-      items: verifiedItems,
-
-      subtotal,
-
-      deliveryFee,
-
-      tip: Number(tip || 0),
-
-      total,
-
-      currency,
-
-      country,
-
-      deliveryType,
-
-      deliveryAddress,
-
-      status: "PENDING",
-    };
-
-    let order;
-
-    try {
-      order =
-        await prisma.order.create({
-          data: orderData,
-        });
-    } catch (createError) {
-      // ------------------------------------------------------
-      // If the deployed Prisma schema does not yet contain
-      // country, retry without country.
-      // ------------------------------------------------------
-
-      if (
-        String(
-          createError.message || ""
-        ).includes("country")
-      ) {
-        delete orderData.country;
-
-        order =
-          await prisma.order.create({
-            data: orderData,
-          });
-      } else {
-        throw createError;
-      }
-    }
-
-    // --------------------------------------------------------
-    // MOCK PAYMENT
-    // --------------------------------------------------------
-    //
-    // No real Stripe/M-Pesa/provider connection yet.
-    // --------------------------------------------------------
-
-    const payment =
-      paymentMethod === "cash"
-        ? {
-            provider: "cash",
-            status: "pending",
-            clientSecret: null,
-            paymentIntentId: null,
-            mock: true,
-          }
-        : {
-            provider: "mock",
-            status: "pending",
-            clientSecret: null,
-            paymentIntentId:
-              `mock_${order.id}`,
-            mock: true,
-          };
-
-    // --------------------------------------------------------
-    // Notify restaurant owner
-    // --------------------------------------------------------
-
-    if (restaurant.ownerId) {
-      try {
-        const {
-          emitToUser,
-        } = require("../realtime");
-
-        if (
-          typeof emitToUser ===
-          "function"
-        ) {
-          emitToUser(
-            restaurant.ownerId,
-            "order:new",
-            {
-              orderId: order.id,
-            }
-          );
-        }
-      } catch (notifyError) {
-        console.warn(
-          "[POST /orders] realtime notification skipped:",
-          notifyError.message
-        );
-      }
-    }
-
-    return res.status(201).json({
-      order,
-      payment,
-    });
-  } catch (err) {
-    console.error(
-      "[POST /orders]",
-      err
-    );
-
-    return res.status(400).json({
-      error:
-        err.message ||
-        "Unable to create order",
-    });
   }
+
+  res.json({
+    restaurant: { id: restaurant.id, name: restaurant.name, deliveryFee: restaurant.deliveryFee },
+    lines,
+    unavailable,
+  });
 });
-
-// ============================================================
-// GET /orders
-// Customer's orders
-// ============================================================
-
-router.get("/", async (req, res) => {
-  try {
-    const orders =
-      await prisma.order.findMany({
-        where: {
-          customerId:
-            req.user.userId,
-        },
-
-        orderBy: {
-          createdAt: "desc",
-        },
-
-        include: {
-          restaurant: {
-            select: {
-              name: true,
-              cuisineType: true,
-            },
-          },
-        },
-      });
-
-    return res.json({
-      orders,
-    });
-  } catch (err) {
-    console.error(
-      "[GET /orders]",
-      err
-    );
-
-    return res.status(500).json({
-      error:
-        "Unable to load orders",
-    });
-  }
-});
-
-// ============================================================
-// GET /orders/:id
-// ============================================================
-
-router.get("/:id", async (req, res) => {
-  try {
-    const order =
-      await prisma.order.findUnique({
-        where: {
-          id: req.params.id,
-        },
-
-        include: {
-          restaurant: {
-            select: {
-              name: true,
-              address: true,
-              lat: true,
-              lng: true,
-            },
-          },
-
-          driver: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-      });
-
-    if (
-      !order ||
-      order.customerId !==
-        req.user.userId
-    ) {
-      return res.status(404).json({
-        error: "Order not found",
-      });
-    }
-
-    let driverProfile = null;
-
-    if (order.driverId) {
-      driverProfile =
-        await prisma.driverProfile.findUnique(
-          {
-            where: {
-              userId:
-                order.driverId,
-            },
-
-            select: {
-              vehicleType: true,
-              vehicleMake: true,
-              vehicleModel: true,
-              vehicleColor: true,
-              licensePlate: true,
-              currentLat: true,
-              currentLng: true,
-            },
-          }
-        );
-    }
-
-    return res.json({
-      order: {
-        ...order,
-        driverProfile,
-      },
-    });
-  } catch (err) {
-    console.error(
-      "[GET /orders/:id]",
-      err
-    );
-
-    return res.status(500).json({
-      error:
-        "Unable to load order",
-    });
-  }
-});
-
-// ============================================================
-// POST /orders/:id/cancel
-// ============================================================
-
-router.post(
-  "/:id/cancel",
-  async (req, res) => {
-    try {
-      const order =
-        await prisma.order.findUnique({
-          where: {
-            id: req.params.id,
-          },
-        });
-
-      if (
-        !order ||
-        order.customerId !==
-          req.user.userId
-      ) {
-        return res.status(404).json({
-          error: "Order not found",
-        });
-      }
-
-      const cancellableStatuses = [
-        "PENDING",
-        "CONFIRMED",
-        "PLACED",
-      ];
-
-      if (
-        !cancellableStatuses.includes(
-          String(order.status)
-        )
-      ) {
-        return res.status(409).json({
-          error:
-            "This order can no longer be cancelled",
-        });
-      }
-
-      const updated =
-        await prisma.order.update({
-          where: {
-            id: order.id,
-          },
-
-          data: {
-            status: "CANCELLED",
-          },
-        });
-
-      return res.json({
-        order: updated,
-      });
-    } catch (err) {
-      console.error(
-        "[POST /orders/:id/cancel]",
-        err
-      );
-
-      return res.status(500).json({
-        error:
-          "Unable to cancel order",
-      });
-    }
-  }
-);
-
-// ============================================================
-// POST /orders/:id/rate
-// ============================================================
-
-router.post(
-  "/:id/rate",
-  async (req, res) => {
-    const parsed =
-      ratingSchema.safeParse(
-        req.body
-      );
-
-    if (!parsed.success) {
-      return res.status(400).json({
-        error:
-          "foodRating (1-5) required",
-      });
-    }
-
-    try {
-      const order =
-        await prisma.order.findUnique({
-          where: {
-            id: req.params.id,
-          },
-
-          include: {
-            rating: true,
-          },
-        });
-
-      if (
-        !order ||
-        order.customerId !==
-          req.user.userId
-      ) {
-        return res.status(404).json({
-          error: "Order not found",
-        });
-      }
-
-      if (
-        order.status !==
-        "DELIVERED"
-      ) {
-        return res.status(409).json({
-          error:
-            "You can only rate a delivered order",
-        });
-      }
-
-      if (order.rating) {
-        return res.status(409).json({
-          error:
-            "You've already rated this order",
-        });
-      }
-
-      const rating =
-        await prisma.rating.create({
-          data: {
-            orderId: order.id,
-
-            customerId:
-              req.user.userId,
-
-            restaurantId:
-              order.restaurantId,
-
-            driverId:
-              order.driverId,
-
-            foodRating:
-              parsed.data
-                .foodRating,
-
-            driverRating:
-              parsed.data
-                .driverRating ??
-              null,
-
-            comment:
-              parsed.data
-                .comment ||
-              null,
-          },
-        });
-
-      const agg =
-        await prisma.rating.aggregate(
-          {
-            where: {
-              restaurantId:
-                order.restaurantId,
-            },
-
-            _avg: {
-              foodRating: true,
-            },
-          }
-        );
-
-      if (
-        agg._avg.foodRating !=
-        null
-      ) {
-        await prisma.restaurant.update(
-          {
-            where: {
-              id: order.restaurantId,
-            },
-
-            data: {
-              rating:
-                Number(
-                  agg._avg
-                    .foodRating
-                .toFixed(1)
-                ),
-            },
-          }
-        );
-      }
-
-      return res.status(201).json({
-        rating,
-      });
-    } catch (err) {
-      console.error(
-        "[POST /orders/:id/rate]",
-        err
-      );
-
-      return res.status(500).json({
-        error:
-          "Unable to rate order",
-      });
-    }
-  }
-);
-
-// ============================================================
-// GET /orders/:id/receipt
-// ============================================================
-
-router.get(
-  "/:id/receipt",
-  async (req, res) => {
-    try {
-      const order =
-        await prisma.order.findUnique({
-          where: {
-            id: req.params.id,
-          },
-
-          include: {
-            restaurant: {
-              select: {
-                name: true,
-                address: true,
-              },
-            },
-          },
-        });
-
-      if (
-        !order ||
-        order.customerId !==
-          req.user.userId
-      ) {
-        return res.status(404).json({
-          error: "Order not found",
-        });
-      }
-
-      return res.json({
-        receipt: {
-          orderId: order.id,
-
-          shortId:
-            order.id
-              .slice(-6)
-              .toUpperCase(),
-
-          currency:
-            order.currency,
-
-          restaurant:
-            order.restaurant?.name,
-
-          restaurantAddress:
-            order.restaurant
-              ?.address,
-
-          placedAt:
-            order.createdAt,
-
-          deliveredAt:
-            order.deliveredAt,
-
-          deliveryType:
-            order.deliveryType,
-
-          deliveryAddress:
-            order.deliveryAddress,
-
-          items:
-            order.items,
-
-          subtotal:
-            order.subtotal,
-
-          deliveryFee:
-            order.deliveryFee,
-
-          tip: order.tip,
-
-          total:
-            order.total,
-
-          status:
-            order.status,
-        },
-      });
-    } catch (err) {
-      console.error(
-        "[GET /orders/:id/receipt]",
-        err
-      );
-
-      return res.status(500).json({
-        error:
-          "Unable to create receipt",
-      });
-    }
-  }
-);
-
-// ============================================================
-// GET /orders/:id/reorder
-// ============================================================
-
-router.get(
-  "/:id/reorder",
-  async (req, res) => {
-    try {
-      const order =
-        await prisma.order.findUnique({
-          where: {
-            id: req.params.id,
-          },
-        });
-
-      if (
-        !order ||
-        order.customerId !==
-          req.user.userId
-      ) {
-        return res.status(404).json({
-          error: "Order not found",
-        });
-      }
-
-      const restaurant =
-        await prisma.restaurant.findUnique(
-          {
-            where: {
-              id: order.restaurantId,
-            },
-          }
-        );
-
-      if (
-        !restaurant ||
-        restaurant.isOpen ===
-          false
-      ) {
-        return res.status(409).json({
-          error:
-            "This restaurant isn't available right now",
-        });
-      }
-
-      const menuItems =
-        await prisma.menuItem.findMany(
-          {
-            where: {
-              restaurantId:
-                order.restaurantId,
-            },
-          }
-        );
-
-      const byId = new Map(
-        menuItems.map(
-          (item) => [
-            item.id,
-            item,
-          ]
-        )
-      );
-
-      const lines = [];
-      const unavailable = [];
-
-      for (
-        const it of
-        order.items || []
-      ) {
-        const item =
-          byId.get(
-            it.menuItemId
-          );
-
-        if (
-          item &&
-          item.isAvailable
-        ) {
-          lines.push({
-            menuItemId:
-              item.id,
-
-            name:
-              item.name,
-
-            price:
-              item.price,
-
-            quantity:
-              it.quantity,
-
-            options:
-              it.options ||
-              [],
-
-            notes:
-              it.notes ||
-              "",
-          });
-        } else {
-          unavailable.push(
-            it.name ||
-              it.menuItemId
-          );
-        }
-      }
-
-      return res.json({
-        restaurant: {
-          id: restaurant.id,
-          name: restaurant.name,
-          deliveryFee:
-            restaurant.deliveryFee,
-        },
-
-        lines,
-
-        unavailable,
-      });
-    } catch (err) {
-      console.error(
-        "[GET /orders/:id/reorder]",
-        err
-      );
-
-      return res.status(500).json({
-        error:
-          "Unable to prepare reorder",
-      });
-    }
-  }
-);
-
-// ============================================================
-// EXPORT
-// ============================================================
 
 module.exports = router;

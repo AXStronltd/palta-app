@@ -30,7 +30,12 @@ export default function RoleSelectScreen({ navigation }) {
             key={r.key}
             activeOpacity={0.85}
             style={styles.role}
-            onPress={() => navigation.navigate("SignUp", { role: r.key })}
+            onPress={() => {
+              // All-in-one Palta: route each role to its home.
+              if (r.key === "deliver") navigation.navigate("DriverHome");
+              else if (r.key === "sell") navigation.navigate("Home"); // merchant onboarding via web dashboard for now
+              else navigation.navigate("Home"); // order / parcel → customer home
+            }}
           >
             <View style={styles.ri}><Text style={styles.riText}>{r.icon}</Text></View>
             <View style={{ flex: 1 }}>

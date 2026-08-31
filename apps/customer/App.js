@@ -13,6 +13,10 @@ import RestaurantsScreen from "./src/screens/RestaurantsScreen";
 import RestaurantMenuScreen from "./src/screens/RestaurantMenuScreen";
 import StoreScreen from "./src/screens/StoreScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
+import RoleEntryScreen from "./src/screens/RoleEntryScreen";
+import DriverHomeScreen from "./src/screens/DriverHomeScreen";
+import ActiveDeliveryScreen from "./src/screens/ActiveDeliveryScreen";
+import KycScreen from "./src/screens/KycScreen";
 import ItemDetailScreen from "./src/screens/ItemDetailScreen";
 import OrderScreen from "./src/screens/OrderScreen";
 import CheckoutScreen from "./src/screens/CheckoutScreen";
@@ -70,6 +74,7 @@ export default function App() {
       ) : (
         <NavigationContainer theme={navTheme}>
           <Stack.Navigator
+            initialRouteName="RoleEntry"
             screenOptions={{
               headerStyle: { backgroundColor: theme.bg },
               headerTintColor: theme.text,
@@ -99,8 +104,14 @@ export default function App() {
             <Stack.Screen name="Profile" options={{ headerShown: false }}>
               {(props) => <ProfileScreen {...props} onSignOut={() => setUser(null)} />}
             </Stack.Screen>
+            <Stack.Screen name="RoleEntry" options={{ headerShown: false }}>
+              {(props) => <RoleEntryScreen {...props} user={user} onPickRole={() => {}} />}
+            </Stack.Screen>
             <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
             <Stack.Screen name="RoleSelect" component={RoleSelectScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="DriverHome" component={DriverHomeScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="ActiveDelivery" component={ActiveDeliveryScreen} options={{ title: "Active delivery" }} />
+            <Stack.Screen name="DriverKyc" component={KycScreen} options={{ title: "Driver verification" }} />
             <Stack.Screen name="ParcelCreate" component={ParcelCreateScreen} options={{ headerShown: false }} />
             <Stack.Screen name="ParcelTracking" component={ParcelTrackingScreen} options={{ headerShown: false }} />
             <Stack.Screen name="Address" component={AddressScreen} options={{ title: "Delivery address" }} />

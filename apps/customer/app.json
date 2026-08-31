@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Paltas",
-    "slug": "paltas-customer",
+    "name": "Palta",
+    "slug": "palta",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
-    "scheme": "paltas",
+    "scheme": "palta",
     "splash": {
       "backgroundColor": "#08131F",
       "resizeMode": "contain",
@@ -17,16 +17,16 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.paltas.customer",
+      "bundleIdentifier": "io.palta.app",
       "buildNumber": "1",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Paltas uses your location to show nearby restaurants and shops and to track your delivery.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Paltas uses your location to track deliveries in real time.",
-        "NSCameraUsageDescription": "Paltas uses the camera for order and delivery photos."
+        "NSLocationWhenInUseUsageDescription": "Palta uses your location to show nearby restaurants and shops and to track your delivery.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Palta uses your location to track deliveries in real time.",
+        "NSCameraUsageDescription": "Palta uses the camera for order and delivery photos."
       }
     },
     "android": {
-      "package": "io.paltas.customer",
+      "package": "io.palta.app",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -43,7 +43,7 @@
       "eas": {
         "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
       },
-      "apiUrl": "https://REPLACE_WITH_YOUR_BACKEND_URL"
+      "apiUrl": "https://palta-app.onrender.com"
     }
   }
 }
