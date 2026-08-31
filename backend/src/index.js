@@ -1,6 +1,10 @@
 // ============================================================
-// Palta backend entry point
-// Express API + Socket.IO realtime server
+// Palta Backend Entry Point
+// ============================================================
+// Express API + Socket.IO realtime server.
+//
+// Only routes that currently exist in backend/src/routes are
+// loaded here. Payment providers are NOT connected yet.
 // ============================================================
 
 require("dotenv").config();
@@ -11,24 +15,19 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 // ------------------------------------------------------------
-// Routes
+// Routes that currently exist
 // ------------------------------------------------------------
 
 const healthRoutes = require("./routes/health");
 const aiRoutes = require("./routes/ai");
 const authRoutes = require("./routes/auth");
 const restaurantRoutes = require("./routes/restaurants");
+const addressRoutes = require("./routes/addresses");
 const geoRoutes = require("./routes/geo");
 const orderRoutes = require("./routes/orders");
-const parcelRoutes = require("./routes/parcels");
-const { router: driverRoutes } = require("./routes/driver");
-const opsRoutes = require("./routes/ops");
-const adminRoutes = require("./routes/admin");
-const restaurantOwnerRoutes = require("./routes/restaurant-owner");
-const configRoutes = require("./routes/config");
 
 // ------------------------------------------------------------
-// Services
+// Existing services
 // ------------------------------------------------------------
 
 const { UPLOAD_DIR } = require("./services/storage");
@@ -40,7 +39,12 @@ const realtime = require("./realtime");
 
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    credentials: false,
+  })
+);
 
 app.use(
   express.json({
@@ -52,15 +56,29 @@ app.use(
 // Request context
 // ------------------------------------------------------------
 
-const { requestContext } = require("./middleware/requestContext");
+try {
+  const { requestContext } = require("./middleware/requestContext");
 
-app.use(requestContext);
+  if (requestContext) {
+    app.use(requestContext);
+  }
+} catch (err) {
+  console.warn(
+    "[startup] requestContext middleware not available:",
+    err.message
+  );
+}
 
 // ------------------------------------------------------------
 // Static uploads
 // ------------------------------------------------------------
 
-app.use("/uploads", express.static(UPLOAD_DIR));
+if (UPLOAD_DIR) {
+  app.use(
+    "/uploads",
+    express.static(UPLOAD_DIR)
+  );
+}
 
 // ------------------------------------------------------------
 // Routes
@@ -72,21 +90,11 @@ app.use("/auth", authRoutes);
 
 app.use("/restaurants", restaurantRoutes);
 
+app.use("/addresses", addressRoutes);
+
 app.use("/geo", geoRoutes);
 
 app.use("/orders", orderRoutes);
-
-app.use("/parcels", parcelRoutes);
-
-app.use("/driver", driverRoutes);
-
-app.use("/ops", opsRoutes);
-
-app.use("/admin", adminRoutes);
-
-app.use("/restaurant", restaurantOwnerRoutes);
-
-app.use("/config", configRoutes);
 
 app.use("/ai", aiRoutes);
 
@@ -102,29 +110,48 @@ app.use((req, res) => {
 });
 
 // ------------------------------------------------------------
-// Centralized error handler
+// Central error handler
 // ------------------------------------------------------------
 
-const { logger } = require("./services/logger");
+try {
+  const { logger } = require("./services/logger");
 
-app.use((err, req, res, next) => {
-  logger.error("Unhandled error", {
-    reqId: req.id,
-    message: err.message,
-    stack: err.stack,
+  app.use((err, req, res, next) => {
+    logger.error("Unhandled request error", {
+      requestId: req.id,
+      message: err.message,
+      stack: err.stack,
+    });
+
+    if (res.headersSent) {
+      return next(err);
+    }
+
+    res.status(err.status || 500).json({
+      error: "Something went wrong",
+      requestId: req.id,
+    });
   });
+} catch (loggerError) {
+  console.warn(
+    "[startup] logger unavailable, using console error handler"
+  );
 
-  if (res.headersSent) {
-    return next(err);
-  }
+  app.use((err, req, res, next) => {
+    console.error("[Unhandled]", err);
 
-  res.status(err.status || 500).json({
-    error: "Something went wrong",
+    if (res.headersSent) {
+      return next(err);
+    }
+
+    res.status(err.status || 500).json({
+      error: "Something went wrong",
+    });
   });
-});
+}
 
 // ------------------------------------------------------------
-// HTTP + Socket.IO server
+// HTTP + Socket.IO
 // ------------------------------------------------------------
 
 const server = http.createServer(app);
@@ -132,34 +159,149 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   },
 });
 
-// Initialize realtime functionality
-realtime.init(io);
+// Initialize Palta realtime layer
+
+try {
+  if (
+    realtime &&
+    typeof realtime.init === "function"
+  ) {
+    realtime.init(io);
+  }
+} catch (err) {
+  console.error(
+    "[startup] Realtime initialization failed:",
+    err.message
+  );
+}
 
 // ------------------------------------------------------------
-// Start server
+// Port
 // ------------------------------------------------------------
 
-const PORT = Number(process.env.PORT) || 4000;
+const PORT =
+  Number(process.env.PORT) || 4000;
+
+// ------------------------------------------------------------
+// Start
+// ------------------------------------------------------------
 
 server.listen(PORT, () => {
-  console.log(`Palta backend running on port ${PORT}`);
-  console.log(`GET  /health`);
-  console.log(`POST /auth/request-otp`);
-  console.log(`POST /auth/verify`);
-  console.log(`GET  /auth/me`);
-  console.log(`GET  /restaurants`);
-  console.log(`GET  /restaurants/:id`);
-  console.log(`GET  /geo/search`);
-  console.log(`GET  /geo/reverse`);
-  console.log(`POST /orders`);
-  console.log(`GET  /orders`);
-  console.log(`GET  /driver/me`);
-  console.log(`POST /driver/submit`);
-  console.log(`POST /driver/online`);
-  console.log(`POST /driver/accept`);
-  console.log(`POST /ops/advance`);
-  console.log(`POST /ai/order`);
+  console.log(
+    `Palta backend running on port ${PORT}`
+  );
+
+  console.log(
+    `GET  /health`
+  );
+
+  console.log(
+    `POST /auth/request-otp`
+  );
+
+  console.log(
+    `POST /auth/verify`
+  );
+
+  console.log(
+    `GET  /auth/me`
+  );
+
+  console.log(
+    `GET  /restaurants`
+  );
+
+  console.log(
+    `GET  /addresses`
+  );
+
+  console.log(
+    `GET  /geo/search`
+  );
+
+  console.log(
+    `GET  /geo/reverse`
+  );
+
+  console.log(
+    `POST /orders`
+  );
+
+  console.log(
+    `GET  /orders`
+  );
+
+  console.log(
+    `POST /ai/ping`
+  );
+
+  console.log(
+    `POST /ai/order`
+  );
 });
+
+// ------------------------------------------------------------
+// Graceful shutdown
+// ------------------------------------------------------------
+
+function shutdown(signal) {
+  console.log(
+    `[shutdown] ${signal} received`
+  );
+
+  server.close(() => {
+    console.log(
+      "[shutdown] HTTP server closed"
+    );
+
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error(
+      "[shutdown] Forced shutdown"
+    );
+
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on(
+  "SIGTERM",
+  () => shutdown("SIGTERM")
+);
+
+process.on(
+  "SIGINT",
+  () => shutdown("SIGINT")
+);
+
+// ------------------------------------------------------------
+// Unhandled process errors
+// ------------------------------------------------------------
+
+process.on(
+  "unhandledRejection",
+  (reason) => {
+    console.error(
+      "[process] Unhandled rejection:",
+      reason
+    );
+  }
+);
+
+process.on(
+  "uncaughtException",
+  (err) => {
+    console.error(
+      "[process] Uncaught exception:",
+      err
+    );
+
+    process.exit(1);
+  }
+);
