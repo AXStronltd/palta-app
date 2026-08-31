@@ -14,7 +14,7 @@ RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists
 
 # Install dependencies (cached unless package files change).
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source + generate the Prisma client against the schema.
 COPY prisma ./prisma
