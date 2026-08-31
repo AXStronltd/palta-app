@@ -4,7 +4,7 @@
 // Express API + Socket.IO realtime server.
 //
 // Payment providers are NOT connected yet.
-// Only routes that currently exist are loaded here.
+// This entry point only loads modules that currently exist.
 // ============================================================
 
 require("dotenv").config();
@@ -19,17 +19,16 @@ const { Server } = require("socket.io");
 // ------------------------------------------------------------
 
 const healthRoutes = require("./routes/health");
-const aiRoutes = require("./routes/ai");
 const authRoutes = require("./routes/auth");
 const restaurantRoutes = require("./routes/restaurants");
 const geoRoutes = require("./routes/geo");
 const orderRoutes = require("./routes/orders");
+const aiRoutes = require("./routes/ai");
 
 // ------------------------------------------------------------
-// Existing services
+// Realtime
 // ------------------------------------------------------------
 
-const { UPLOAD_DIR } = require("./services/storage");
 const realtime = require("./realtime");
 
 // ------------------------------------------------------------
@@ -50,7 +49,7 @@ app.use(
 );
 
 // ------------------------------------------------------------
-// JSON body parser
+// JSON
 // ------------------------------------------------------------
 
 app.use(
@@ -71,19 +70,8 @@ try {
   }
 } catch (err) {
   console.warn(
-    "[startup] requestContext middleware not available:",
+    "[startup] requestContext unavailable:",
     err.message
-  );
-}
-
-// ------------------------------------------------------------
-// Static uploads
-// ------------------------------------------------------------
-
-if (UPLOAD_DIR) {
-  app.use(
-    "/uploads",
-    express.static(UPLOAD_DIR)
   );
 }
 
@@ -104,7 +92,7 @@ app.use("/orders", orderRoutes);
 app.use("/ai", aiRoutes);
 
 // ------------------------------------------------------------
-// 404 handler
+// 404
 // ------------------------------------------------------------
 
 app.use((req, res) => {
@@ -115,51 +103,35 @@ app.use((req, res) => {
 });
 
 // ------------------------------------------------------------
-// Central error handler
+// Error handler
 // ------------------------------------------------------------
 
-try {
-  const { logger } = require("./services/logger");
-
-  app.use((err, req, res, next) => {
-    logger.error("Unhandled request error", {
-      requestId: req.id,
-      message: err.message,
-      stack: err.stack,
-    });
-
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    res.status(err.status || 500).json({
-      error: "Something went wrong",
-      requestId: req.id,
-    });
+app.use((err, req, res, next) => {
+  console.error("[Unhandled request error]", {
+    requestId: req.id,
+    message: err?.message,
+    stack: err?.stack,
   });
-} catch (loggerError) {
-  console.warn(
-    "[startup] logger unavailable, using console error handler"
-  );
 
-  app.use((err, req, res, next) => {
-    console.error("[Unhandled]", err);
+  if (res.headersSent) {
+    return next(err);
+  }
 
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    res.status(err.status || 500).json({
-      error: "Something went wrong",
-    });
+  res.status(err?.status || 500).json({
+    error: "Something went wrong",
+    requestId: req.id || null,
   });
-}
+});
 
 // ------------------------------------------------------------
-// HTTP + Socket.IO
+// HTTP server
 // ------------------------------------------------------------
 
 const server = http.createServer(app);
+
+// ------------------------------------------------------------
+// Socket.IO
+// ------------------------------------------------------------
 
 const io = new Server(server, {
   cors: {
@@ -175,7 +147,7 @@ const io = new Server(server, {
 });
 
 // ------------------------------------------------------------
-// Initialize realtime layer
+// Realtime initialization
 // ------------------------------------------------------------
 
 try {
@@ -184,6 +156,7 @@ try {
     typeof realtime.init === "function"
   ) {
     realtime.init(io);
+    console.log("[startup] Realtime initialized");
   }
 } catch (err) {
   console.error(
@@ -200,7 +173,7 @@ const PORT =
   Number(process.env.PORT) || 4000;
 
 // ------------------------------------------------------------
-// Start server
+// Start
 // ------------------------------------------------------------
 
 server.listen(PORT, () => {
@@ -216,7 +189,10 @@ server.listen(PORT, () => {
   console.log("POST /auth/push-token");
 
   console.log("GET  /restaurants");
+  console.log("GET  /restaurants/:id");
+  console.log("GET  /restaurants/cuisines");
 
+  console.log("GET  /geo/config");
   console.log("GET  /geo/search");
   console.log("GET  /geo/reverse");
 
@@ -269,7 +245,7 @@ process.on(
 );
 
 // ------------------------------------------------------------
-// Process error handling
+// Process errors
 // ------------------------------------------------------------
 
 process.on(
