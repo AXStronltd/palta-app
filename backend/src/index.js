@@ -3,8 +3,8 @@
 // ============================================================
 // Express API + Socket.IO realtime server.
 //
-// Only routes that currently exist in backend/src/routes are
-// loaded here. Payment providers are NOT connected yet.
+// Payment providers are NOT connected yet.
+// Only routes that currently exist are loaded here.
 // ============================================================
 
 require("dotenv").config();
@@ -15,14 +15,13 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 // ------------------------------------------------------------
-// Routes that currently exist
+// Routes
 // ------------------------------------------------------------
 
 const healthRoutes = require("./routes/health");
 const aiRoutes = require("./routes/ai");
 const authRoutes = require("./routes/auth");
 const restaurantRoutes = require("./routes/restaurants");
-const addressRoutes = require("./routes/addresses");
 const geoRoutes = require("./routes/geo");
 const orderRoutes = require("./routes/orders");
 
@@ -39,12 +38,20 @@ const realtime = require("./realtime");
 
 const app = express();
 
+// ------------------------------------------------------------
+// CORS
+// ------------------------------------------------------------
+
 app.use(
   cors({
     origin: "*",
     credentials: false,
   })
 );
+
+// ------------------------------------------------------------
+// JSON body parser
+// ------------------------------------------------------------
 
 app.use(
   express.json({
@@ -59,7 +66,7 @@ app.use(
 try {
   const { requestContext } = require("./middleware/requestContext");
 
-  if (requestContext) {
+  if (typeof requestContext === "function") {
     app.use(requestContext);
   }
 } catch (err) {
@@ -89,8 +96,6 @@ app.use("/health", healthRoutes);
 app.use("/auth", authRoutes);
 
 app.use("/restaurants", restaurantRoutes);
-
-app.use("/addresses", addressRoutes);
 
 app.use("/geo", geoRoutes);
 
@@ -159,11 +164,19 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+    ],
   },
 });
 
-// Initialize Palta realtime layer
+// ------------------------------------------------------------
+// Initialize realtime layer
+// ------------------------------------------------------------
 
 try {
   if (
@@ -187,7 +200,7 @@ const PORT =
   Number(process.env.PORT) || 4000;
 
 // ------------------------------------------------------------
-// Start
+// Start server
 // ------------------------------------------------------------
 
 server.listen(PORT, () => {
@@ -195,53 +208,28 @@ server.listen(PORT, () => {
     `Palta backend running on port ${PORT}`
   );
 
-  console.log(
-    `GET  /health`
-  );
+  console.log("GET  /health");
 
-  console.log(
-    `POST /auth/request-otp`
-  );
+  console.log("POST /auth/request-otp");
+  console.log("POST /auth/verify");
+  console.log("GET  /auth/me");
+  console.log("POST /auth/push-token");
 
-  console.log(
-    `POST /auth/verify`
-  );
+  console.log("GET  /restaurants");
 
-  console.log(
-    `GET  /auth/me`
-  );
+  console.log("GET  /geo/search");
+  console.log("GET  /geo/reverse");
 
-  console.log(
-    `GET  /restaurants`
-  );
+  console.log("POST /orders");
+  console.log("GET  /orders");
+  console.log("GET  /orders/:id");
+  console.log("POST /orders/:id/cancel");
+  console.log("POST /orders/:id/rate");
+  console.log("GET  /orders/:id/receipt");
+  console.log("GET  /orders/:id/reorder");
 
-  console.log(
-    `GET  /addresses`
-  );
-
-  console.log(
-    `GET  /geo/search`
-  );
-
-  console.log(
-    `GET  /geo/reverse`
-  );
-
-  console.log(
-    `POST /orders`
-  );
-
-  console.log(
-    `GET  /orders`
-  );
-
-  console.log(
-    `POST /ai/ping`
-  );
-
-  console.log(
-    `POST /ai/order`
-  );
+  console.log("POST /ai/ping");
+  console.log("POST /ai/order");
 });
 
 // ------------------------------------------------------------
@@ -281,7 +269,7 @@ process.on(
 );
 
 // ------------------------------------------------------------
-// Unhandled process errors
+// Process error handling
 // ------------------------------------------------------------
 
 process.on(
