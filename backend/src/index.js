@@ -1,6 +1,6 @@
 // ============================================================
-// Palta Backend
-// Production entry point
+// Palta backend entry point
+// Express API + Socket.IO realtime server
 // ============================================================
 
 require("dotenv").config();
@@ -10,44 +10,37 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 
-// ============================================================
-// CURRENT ROUTES
-// These are the route files that currently exist in the repo.
-// ============================================================
+// ------------------------------------------------------------
+// Routes
+// ------------------------------------------------------------
 
 const healthRoutes = require("./routes/health");
 const aiRoutes = require("./routes/ai");
 const authRoutes = require("./routes/auth");
 const restaurantRoutes = require("./routes/restaurants");
 const geoRoutes = require("./routes/geo");
+const orderRoutes = require("./routes/orders");
+const parcelRoutes = require("./routes/parcels");
+const { router: driverRoutes } = require("./routes/driver");
+const opsRoutes = require("./routes/ops");
+const adminRoutes = require("./routes/admin");
+const restaurantOwnerRoutes = require("./routes/restaurant-owner");
 const configRoutes = require("./routes/config");
 
-// ============================================================
-// REALTIME
-// ============================================================
+// ------------------------------------------------------------
+// Services
+// ------------------------------------------------------------
 
+const { UPLOAD_DIR } = require("./services/storage");
 const realtime = require("./realtime");
 
-// ============================================================
-// EXPRESS APP
-// ============================================================
+// ------------------------------------------------------------
+// App
+// ------------------------------------------------------------
 
 const app = express();
 
-// ------------------------------------------------------------
-// CORS
-// ------------------------------------------------------------
-
-app.use(
-  cors({
-    origin: "*",
-    credentials: false,
-  })
-);
-
-// ------------------------------------------------------------
-// JSON BODY
-// ------------------------------------------------------------
+app.use(cors());
 
 app.use(
   express.json({
@@ -55,40 +48,51 @@ app.use(
   })
 );
 
-// ============================================================
-// BASIC REQUEST LOGGING
-// ============================================================
+// ------------------------------------------------------------
+// Request context
+// ------------------------------------------------------------
 
-app.use((req, _res, next) => {
-  console.log(`[Palta] ${req.method} ${req.path}`);
-  next();
-});
+const { requestContext } = require("./middleware/requestContext");
 
-// ============================================================
-// ROUTES
-// ============================================================
+app.use(requestContext);
 
-// Health
+// ------------------------------------------------------------
+// Static uploads
+// ------------------------------------------------------------
+
+app.use("/uploads", express.static(UPLOAD_DIR));
+
+// ------------------------------------------------------------
+// Routes
+// ------------------------------------------------------------
+
 app.use("/health", healthRoutes);
 
-// Authentication
 app.use("/auth", authRoutes);
 
-// Restaurants
 app.use("/restaurants", restaurantRoutes);
 
-// Geography
 app.use("/geo", geoRoutes);
 
-// Public configuration
+app.use("/orders", orderRoutes);
+
+app.use("/parcels", parcelRoutes);
+
+app.use("/driver", driverRoutes);
+
+app.use("/ops", opsRoutes);
+
+app.use("/admin", adminRoutes);
+
+app.use("/restaurant", restaurantOwnerRoutes);
+
 app.use("/config", configRoutes);
 
-// AI
 app.use("/ai", aiRoutes);
 
-// ============================================================
-// 404 HANDLER
-// ============================================================
+// ------------------------------------------------------------
+// 404 handler
+// ------------------------------------------------------------
 
 app.use((req, res) => {
   res.status(404).json({
@@ -97,15 +101,21 @@ app.use((req, res) => {
   });
 });
 
-// ============================================================
-// GLOBAL ERROR HANDLER
-// ============================================================
+// ------------------------------------------------------------
+// Centralized error handler
+// ------------------------------------------------------------
 
-app.use((err, req, res, _next) => {
-  console.error("[Palta] Unhandled error:", err);
+const { logger } = require("./services/logger");
+
+app.use((err, req, res, next) => {
+  logger.error("Unhandled error", {
+    reqId: req.id,
+    message: err.message,
+    stack: err.stack,
+  });
 
   if (res.headersSent) {
-    return;
+    return next(err);
   }
 
   res.status(err.status || 500).json({
@@ -113,15 +123,11 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// ============================================================
-// HTTP SERVER
-// ============================================================
+// ------------------------------------------------------------
+// HTTP + Socket.IO server
+// ------------------------------------------------------------
 
 const server = http.createServer(app);
-
-// ============================================================
-// SOCKET.IO
-// ============================================================
 
 const io = new Server(server, {
   cors: {
@@ -129,48 +135,31 @@ const io = new Server(server, {
   },
 });
 
-// Initialize realtime safely
-try {
-  realtime.init(io);
-  console.log("[Palta] Realtime initialized");
-} catch (err) {
-  console.error(
-    "[Palta] Realtime initialization failed:",
-    err.message
-  );
-}
+// Initialize realtime functionality
+realtime.init(io);
 
-// ============================================================
-// PORT
-// Render provides process.env.PORT automatically.
-// ============================================================
+// ------------------------------------------------------------
+// Start server
+// ------------------------------------------------------------
 
-const PORT = process.env.PORT || 4000;
-
-// ============================================================
-// START SERVER
-// ============================================================
+const PORT = Number(process.env.PORT) || 4000;
 
 server.listen(PORT, () => {
-  console.log("");
-  console.log("==========================================");
-  console.log("       PALTA BACKEND IS RUNNING");
-  console.log("==========================================");
-  console.log(`Port: ${PORT}`);
-  console.log("");
-  console.log("Routes:");
-  console.log("GET  /health");
-  console.log("GET  /health/ready");
-  console.log("POST /auth/request-otp");
-  console.log("POST /auth/verify");
-  console.log("GET  /restaurants");
-  console.log("GET  /restaurants/:id");
-  console.log("GET  /restaurants/cuisines");
-  console.log("GET  /geo/search");
-  console.log("GET  /geo/reverse");
-  console.log("GET  /config/countries");
-  console.log("POST /ai/ping");
-  console.log("POST /ai/order");
-  console.log("");
-  console.log("==========================================");
+  console.log(`Palta backend running on port ${PORT}`);
+  console.log(`GET  /health`);
+  console.log(`POST /auth/request-otp`);
+  console.log(`POST /auth/verify`);
+  console.log(`GET  /auth/me`);
+  console.log(`GET  /restaurants`);
+  console.log(`GET  /restaurants/:id`);
+  console.log(`GET  /geo/search`);
+  console.log(`GET  /geo/reverse`);
+  console.log(`POST /orders`);
+  console.log(`GET  /orders`);
+  console.log(`GET  /driver/me`);
+  console.log(`POST /driver/submit`);
+  console.log(`POST /driver/online`);
+  console.log(`POST /driver/accept`);
+  console.log(`POST /ops/advance`);
+  console.log(`POST /ai/order`);
 });
