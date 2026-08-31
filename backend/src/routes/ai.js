@@ -1,166 +1,156 @@
 // ============================================================
-// Palta Backend Entry Point
-// Express API + Socket.IO realtime server
+// Palta AI Routes
+// ============================================================
+// Provides:
+//   POST /ai/ping
+//   POST /ai/order
+//
+// /ai/ping:
+//   Simple LLM connectivity test.
+//
+// /ai/order:
+//   Conversational restaurant ordering.
+//   The ordering engine only selects real menu items.
 // ============================================================
 
-require("dotenv").config();
-
 const express = require("express");
-const cors = require("cors");
-const http = require("http");
-const { Server } = require("socket.io");
+const { z } = require("zod");
 
-// ------------------------------------------------------------
-// Routes that currently exist in backend/src/routes/
-// ------------------------------------------------------------
+const { complete } = require("../ai/client");
+const { runOrderingTurn } = require("../ai/ordering");
+const { requireAuth } = require("../middleware/auth");
 
-const healthRoutes = require("./routes/health");
-const authRoutes = require("./routes/auth");
-const restaurantRoutes = require("./routes/restaurants");
-const geoRoutes = require("./routes/geo");
-const orderRoutes = require("./routes/orders");
-const aiRoutes = require("./routes/ai");
-const configRoutes = require("./routes/config");
+const router = express.Router();
 
-// ------------------------------------------------------------
-// Services / middleware
-// ------------------------------------------------------------
+// ============================================================
+// AI PING
+// ============================================================
 
-const { UPLOAD_DIR } = require("./services/storage");
-const realtime = require("./realtime");
-
-// ------------------------------------------------------------
-// App
-// ------------------------------------------------------------
-
-const app = express();
-
-app.use(cors());
-
-app.use(
-  express.json({
-    limit: "12mb",
-  })
-);
-
-// ------------------------------------------------------------
-// Request context
-// ------------------------------------------------------------
-
-try {
-  const { requestContext } = require("./middleware/requestContext");
-
-  if (typeof requestContext === "function") {
-    app.use(requestContext);
-  }
-} catch (err) {
-  console.warn(
-    "[startup] requestContext middleware not loaded:",
-    err.message
-  );
-}
-
-// ------------------------------------------------------------
-// Uploaded files
-// ------------------------------------------------------------
-
-if (UPLOAD_DIR) {
-  app.use("/uploads", express.static(UPLOAD_DIR));
-}
-
-// ------------------------------------------------------------
-// Routes
-// ------------------------------------------------------------
-
-app.use("/health", healthRoutes);
-
-app.use("/auth", authRoutes);
-
-app.use("/restaurants", restaurantRoutes);
-
-app.use("/geo", geoRoutes);
-
-app.use("/orders", orderRoutes);
-
-app.use("/ai", aiRoutes);
-
-app.use("/config", configRoutes);
-
-// ------------------------------------------------------------
-// 404 handler
-// ------------------------------------------------------------
-
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Not found",
-    path: req.path,
-  });
+const pingSchema = z.object({
+  message: z.string().min(1).max(500),
 });
 
-// ------------------------------------------------------------
-// Central error handler
-// ------------------------------------------------------------
+// POST /ai/ping
+// Body:
+// {
+//   "message": "Hello Palta"
+// }
+//
+// Response:
+// {
+//   "reply": "Hello! How can I help you today?"
+// }
 
-app.use((err, req, res, next) => {
-  console.error("[Unhandled Error]", {
-    message: err.message,
-    stack: err.stack,
-    requestId: req.id,
-  });
+router.post("/ping", async (req, res) => {
+  const parsed = pingSchema.safeParse(req.body);
 
-  if (res.headersSent) {
-    return next(err);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "message is required",
+    });
   }
 
-  res.status(err.status || 500).json({
-    error: "Something went wrong",
-  });
+  try {
+    const reply = await complete({
+      system:
+        "You are Palta's assistant, a friendly food-delivery helper. Keep replies to one short sentence.",
+
+      messages: [
+        {
+          role: "user",
+          content: parsed.data.message,
+        },
+      ],
+
+      maxTokens: 100,
+    });
+
+    return res.json({
+      reply,
+    });
+  } catch (err) {
+    console.error("[/ai/ping] error:", err.message);
+
+    return res.status(500).json({
+      error: "AI layer failed",
+      detail: err.message,
+    });
+  }
 });
 
-// ------------------------------------------------------------
-// HTTP + Socket.IO
-// ------------------------------------------------------------
+// ============================================================
+// CONVERSATIONAL ORDERING
+// ============================================================
 
-const server = http.createServer(app);
+const orderSchema = z.object({
+  restaurantId: z.string().min(1),
 
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  },
+  message: z.string().min(1).max(500),
+
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
-// Initialize realtime functionality
-if (realtime && typeof realtime.init === "function") {
-  realtime.init(io);
-}
+// POST /ai/order
+//
+// Body:
+//
+// {
+//   "restaurantId": "restaurant-id",
+//   "message": "I want a burger under $15",
+//   "history": []
+// }
+//
+// Response:
+//
+// {
+//   "reply": "...",
+//   "cart": [...],
+//   "subtotal": 12.99
+// }
 
-// ------------------------------------------------------------
-// Port
-// ------------------------------------------------------------
+router.post("/order", requireAuth, async (req, res) => {
+  const parsed = orderSchema.safeParse(req.body);
 
-const PORT = Number(process.env.PORT) || 4000;
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "restaurantId and message are required",
+    });
+  }
 
-// ------------------------------------------------------------
-// Start server
-// ------------------------------------------------------------
+  try {
+    const {
+      restaurantId,
+      message,
+      history,
+    } = parsed.data;
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log("==============================================");
-  console.log("Palta backend started");
-  console.log(`Port: ${PORT}`);
-  console.log("==============================================");
+    const result = await runOrderingTurn({
+      restaurantId,
+      history,
+      userMessage: message,
+    });
 
-  console.log("GET  /health");
-  console.log("POST /auth/request-otp");
-  console.log("POST /auth/verify");
-  console.log("GET  /restaurants");
-  console.log("GET  /restaurants/:id");
-  console.log("GET  /geo/search");
-  console.log("GET  /geo/reverse");
-  console.log("POST /orders");
-  console.log("GET  /orders");
-  console.log("POST /ai/ping");
-  console.log("POST /ai/order");
-  console.log("GET  /config");
+    return res.json(result);
+  } catch (err) {
+    console.error("[/ai/order] error:", err.message);
+
+    return res.status(500).json({
+      error: "Ordering failed",
+      detail: err.message,
+    });
+  }
 });
+
+// ============================================================
+// EXPORT
+// ============================================================
+
+module.exports = router;
