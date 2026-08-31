@@ -1,124 +1,316 @@
 // ============================================================
-// Conversational ordering engine
+// Palta - Conversational Ordering Engine
 // ============================================================
 //
-// Turns natural language ("something under $15, no seafood, for two")
-// into a verified cart of REAL menu items.
+// Turns natural language into a verified cart of REAL menu items.
 //
-// GROUNDING RULE (from Day 1): the AI may only ever select items that
-// exist in the menu we pass it. It cannot invent dishes or prices.
-// We enforce this twice:
-//   1. In the prompt — it's told to only use provided items by id.
-//   2. In code — after the AI replies, every chosen id is validated
-//      against the real menu. Unknown ids are dropped.
+// IMPORTANT:
+// - The AI can only select items that exist in the live database menu.
+// - The AI cannot invent dishes, prices, or restaurants.
+// - Every selected item is verified against the database.
+// - Names and prices always come from the database.
 // ============================================================
 
 const { complete } = require("../client");
-const { prisma } = require("../prisma");
+const { prisma } = require("../../prisma");
 
 /**
- * Build the system prompt. The live menu is injected as structured
- * context so the model is grounded in real, in-stock items only.
+ * Build the AI system prompt using the restaurant's REAL menu.
  */
 function buildSystemPrompt(restaurant, menu) {
   const menuLines = menu
     .map(
       (m) =>
-        `- id:${m.id} | ${m.name} | $${m.price.toFixed(2)} | ${m.category}` +
+        `- id:${m.id} | ${m.name} | $${Number(m.price).toFixed(2)} | ${m.category}` +
         (m.description ? ` | ${m.description}` : "")
     )
     .join("\n");
 
   return `You are Palta's ordering assistant for "${restaurant.name}".
-Your job: understand what the customer wants and pick matching items
-FROM THE MENU BELOW ONLY. Never invent dishes, prices, or restaurants.
 
-MENU (only these exist — use the exact id):
+Your job is to understand what the customer wants and select matching
+items FROM THE MENU BELOW ONLY.
+
+NEVER invent:
+- dishes
+- menu items
+- prices
+- restaurants
+- menu item IDs
+
+MENU:
 ${menuLines}
 
-Rules:
-- Only choose items whose id appears above.
-- Respect constraints (budget, dietary, quantity, "no X").
-- If nothing fits, say so and suggest the closest real option.
+RULES:
+- Only choose items whose exact ID appears in the menu above.
+- Respect the customer's budget.
+- Respect dietary requirements.
+- Respect exclusions such as "no seafood", "no meat", etc.
+- Respect quantities.
+- Never create an item that is not in the menu.
+- Never change a menu item's price.
+- If nothing matches, explain briefly and suggest a real item from the menu.
+- If you need more information, ask one short question.
 - Keep replies short and friendly.
 
-Respond with a JSON object ONLY, no markdown, in this exact shape:
+Return JSON ONLY.
+Do not use markdown.
+Do not use code fences.
+
+Exact response format:
 {
-  "reply": "one short friendly sentence to the customer",
-  "cart": [ { "menuItemId": "<id from menu>", "quantity": <int> } ]
+  "reply": "one short friendly sentence",
+  "cart": [
+    {
+      "menuItemId": "EXACT_MENU_ITEM_ID",
+      "quantity": 1
+    }
+  ]
 }
-If you cannot build a cart yet (need more info), return an empty cart
-and ask your question in "reply".`;
+
+If you cannot build a cart yet, return:
+{
+  "reply": "your short question",
+  "cart": []
+}`;
 }
 
 /**
- * Safely parse the model's JSON, tolerating stray markdown fences.
+ * Safely parse AI JSON.
+ *
+ * Some models occasionally return markdown code fences,
+ * so we remove them before parsing.
  */
 function parseAiJson(text) {
-  const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+  if (!text || typeof text !== "string") {
+    return {
+      reply: "Sorry, could you rephrase that?",
+      cart: [],
+    };
+  }
+
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
   try {
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      reply:
+        typeof parsed.reply === "string" && parsed.reply.trim()
+          ? parsed.reply.trim()
+          : "Here's what I've got for you.",
+      cart: Array.isArray(parsed.cart) ? parsed.cart : [],
+    };
   } catch {
-    return { reply: cleaned || "Sorry, could you rephrase that?", cart: [] };
+    return {
+      reply: cleaned || "Sorry, could you rephrase that?",
+      cart: [],
+    };
   }
 }
 
 /**
- * Validate AI-chosen items against the real menu. This is the code-side
- * half of the grounding rule: anything the AI picked that isn't a real,
- * available item is discarded, and prices/names come from the DB — never
- * from the model.
+ * Verify the AI cart against the REAL database menu.
+ *
+ * The AI is never trusted for:
+ * - item name
+ * - price
+ * - availability
+ *
+ * Those values always come from the database.
  */
 function verifyCart(aiCart, menu) {
-  const byId = new Map(menu.map((m) => [m.id, m]));
+  const byId = new Map(menu.map((item) => [String(item.id), item]));
+
   const verified = [];
-  for (const line of aiCart || []) {
-    const item = byId.get(line.menuItemId);
-    if (!item || !item.isAvailable) continue; // drop hallucinated/unavailable
-    const quantity = Math.max(1, Math.min(20, parseInt(line.quantity, 10) || 1));
+
+  for (const line of Array.isArray(aiCart) ? aiCart : []) {
+    if (!line || typeof line !== "object") {
+      continue;
+    }
+
+    const menuItemId = String(line.menuItemId || "").trim();
+
+    if (!menuItemId) {
+      continue;
+    }
+
+    const item = byId.get(menuItemId);
+
+    // Ignore hallucinated or unavailable items.
+    if (!item || !item.isAvailable) {
+      continue;
+    }
+
+    let quantity = parseInt(line.quantity, 10);
+
+    if (!Number.isFinite(quantity)) {
+      quantity = 1;
+    }
+
+    // Keep quantities safe.
+    quantity = Math.max(1, Math.min(20, quantity));
+
     verified.push({
       menuItemId: item.id,
       name: item.name,
-      price: item.price, // authoritative price from DB
+      price: Number(item.price),
       quantity,
     });
   }
+
   return verified;
 }
 
 /**
- * Main entry: given a restaurant, the conversation so far, and the new
- * user message, return { reply, cart, subtotal }.
+ * Run one conversational ordering turn.
+ *
+ * Input:
+ * {
+ *   restaurantId,
+ *   history,
+ *   userMessage
+ * }
+ *
+ * Returns:
+ * {
+ *   reply,
+ *   cart,
+ *   subtotal
+ * }
  */
-async function runOrderingTurn({ restaurantId, history, userMessage }) {
-  const restaurant = await prisma.restaurant.findUnique({
-    where: { id: restaurantId },
-  });
-  if (!restaurant) throw new Error("Restaurant not found");
-
-  const menu = await prisma.menuItem.findMany({
-    where: { restaurantId, isAvailable: true },
-  });
-  if (menu.length === 0) {
-    return { reply: "This restaurant has no available items right now.", cart: [], subtotal: 0 };
+async function runOrderingTurn({
+  restaurantId,
+  history = [],
+  userMessage,
+}) {
+  if (!restaurantId) {
+    throw new Error("Restaurant ID is required");
   }
 
+  if (!userMessage || typeof userMessage !== "string") {
+    throw new Error("User message is required");
+  }
+
+  // ----------------------------------------------------------
+  // 1. Load restaurant
+  // ----------------------------------------------------------
+
+  const restaurant = await prisma.restaurant.findUnique({
+    where: {
+      id: restaurantId,
+    },
+  });
+
+  if (!restaurant) {
+    throw new Error("Restaurant not found");
+  }
+
+  // ----------------------------------------------------------
+  // 2. Load REAL available menu items
+  // ----------------------------------------------------------
+
+  const menu = await prisma.menuItem.findMany({
+    where: {
+      restaurantId,
+      isAvailable: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+  });
+
+  if (menu.length === 0) {
+    return {
+      reply: "This restaurant has no available items right now.",
+      cart: [],
+      subtotal: 0,
+    };
+  }
+
+  // ----------------------------------------------------------
+  // 3. Build grounded AI prompt
+  // ----------------------------------------------------------
+
   const system = buildSystemPrompt(restaurant, menu);
+
+  // ----------------------------------------------------------
+  // 4. Clean conversation history
+  // ----------------------------------------------------------
+
+  const safeHistory = Array.isArray(history)
+    ? history
+        .filter(
+          (message) =>
+            message &&
+            (message.role === "user" ||
+              message.role === "assistant" ||
+              message.role === "system") &&
+            typeof message.content === "string"
+        )
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+        }))
+    : [];
+
   const messages = [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: "user", content: userMessage },
+    ...safeHistory,
+    {
+      role: "user",
+      content: userMessage,
+    },
   ];
 
-  const raw = await complete({ system, messages, maxTokens: 600 });
+  // ----------------------------------------------------------
+  // 5. Ask AI
+  // ----------------------------------------------------------
+
+  const raw = await complete({
+    system,
+    messages,
+    maxTokens: 600,
+  });
+
+  // ----------------------------------------------------------
+  // 6. Parse AI response
+  // ----------------------------------------------------------
+
   const parsed = parseAiJson(raw);
+
+  // ----------------------------------------------------------
+  // 7. Verify AI cart against database
+  // ----------------------------------------------------------
+
   const cart = verifyCart(parsed.cart, menu);
-  const subtotal = cart.reduce((sum, l) => sum + l.price * l.quantity, 0);
+
+  // ----------------------------------------------------------
+  // 8. Calculate subtotal using DATABASE prices
+  // ----------------------------------------------------------
+
+  const subtotal = cart.reduce((sum, item) => {
+    return sum + Number(item.price) * Number(item.quantity);
+  }, 0);
+
+  // ----------------------------------------------------------
+  // 9. Return verified result
+  // ----------------------------------------------------------
 
   return {
-    reply: parsed.reply || "Here's what I've got for you.",
+    reply:
+      parsed.reply ||
+      "Here's what I've got for you.",
     cart,
     subtotal: Number(subtotal.toFixed(2)),
   };
 }
 
-module.exports = { runOrderingTurn, verifyCart, buildSystemPrompt };
+module.exports = {
+  runOrderingTurn,
+  verifyCart,
+  buildSystemPrompt,
+  parseAiJson,
+};
